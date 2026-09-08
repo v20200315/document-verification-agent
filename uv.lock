@@ -235,7 +235,7 @@ dependencies = [
     { name = "langchain-ollama" },
     { name = "langchain-openai" },
     { name = "python-dotenv" },
-    { name = "streamlit" },
+    { name = "streamlit", extra = ["pdf"] },
 ]
 
 [package.dev-dependencies]
@@ -251,7 +251,7 @@ requires-dist = [
     { name = "langchain-ollama", specifier = ">=1.1.0" },
     { name = "langchain-openai", specifier = ">=1.6.0" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
-    { name = "streamlit", specifier = ">=1.63.0" },
+    { name = "streamlit", extras = ["pdf"], specifier = ">=1.63.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1652,6 +1652,20 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ce/8a/ccd27f3d5fb05734659a3c188b2c4014454d263e30ae31bb93445290b9cb/streamlit-1.63.0.tar.gz", hash = "sha256:1ea0121884d5606cf055b8c42600528daf07d0401eaabfc8e22f00e235ea53eb", size = 9911883, upload-time = "2026-09-01T17:12:32.456Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/18/60/2acf1a5cac2b2fa6b09fea362abf81f210cf25cee40082ab11beb754cf70/streamlit-1.63.0-py3-none-any.whl", hash = "sha256:c24fd38170543ffb749321c801627aaa09068219539d7b81ef77633ea2408b36", size = 10497212, upload-time = "2026-09-01T17:12:30.021Z" },
+]
+
+[package.optional-dependencies]
+pdf = [
+    { name = "streamlit-pdf" },
+]
+
+[[package]]
+name = "streamlit-pdf"
+version = "2.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/5d/04487c85e3b5071b417451f1a910302d063ccd9f392457846bea271b340d/streamlit_pdf-2.0.1.tar.gz", hash = "sha256:c6306381d0eeb291d7a4f6eb16cfbf937560a29be78049c64251fa2c3276e1a2", size = 1949207, upload-time = "2025-11-18T00:38:44.079Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/65/57/ba77126eed2cb516feaf19b9f9d39af5be110b0a692415e772c7bbab7ed3/streamlit_pdf-2.0.1-py3-none-any.whl", hash = "sha256:8330d7f954e46edc7574b7e498378462555a8e25e829946abb78dbf5684b0a1e", size = 2083529, upload-time = "2025-11-18T00:38:42.373Z" },
 ]
 
 [[package]]

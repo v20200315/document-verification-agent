@@ -11,7 +11,7 @@ dependencies = [
     "langchain-ollama>=1.1.0",
     "langchain-openai>=1.6.0",
     "python-dotenv>=1.2.3",
-    "streamlit>=1.63.0",
+    "streamlit[pdf]>=1.63.0",
 ]
 
 [dependency-groups]
