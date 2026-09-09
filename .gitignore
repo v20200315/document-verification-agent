@@ -50,6 +50,10 @@ coverage.xml
 # Streamlit
 .streamlit/secrets.toml
 
+# Streamlit agent skills (environment-specific symlinks)
+.agents/
+.claude/
+
 # LangChain / LangGraph local artifacts
 .langsmith/
 .langchain.db
