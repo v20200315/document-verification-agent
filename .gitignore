@@ -28,6 +28,7 @@ share/python-wheels/
 
 # Test / coverage
 .pytest_cache/
+**/tests/.tmp/
 .coverage
 .coverage.*
 htmlcov/
