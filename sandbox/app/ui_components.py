@@ -10,10 +10,39 @@ from sandbox.src.schemas import DocumentResult
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
 
+def render_dashboard() -> None:
+    st.title("Welcome / 欢迎")
+    st.caption(
+        "Document extraction and CCC classification workspace / "
+        "文档提取与 CCC 分类工作台"
+    )
+
+    st.subheader("What you can do / 功能")
+    capabilities = st.columns(3)
+    with capabilities[0].container(border=True, height="stretch"):
+        st.markdown("**Upload / 上传**")
+        st.write("PDF, JPG, JPEG, and PNG documents.")
+    with capabilities[1].container(border=True, height="stretch"):
+        st.markdown("**Extract / 提取**")
+        st.write("Preserve page text, tables, and key fields.")
+    with capabilities[2].container(border=True, height="stretch"):
+        st.markdown("**Classify / 分类**")
+        st.write("Authorization, CCC certification, or other.")
+
+    st.subheader("Getting started / 开始使用")
+    st.markdown(
+        "1. Select **CCC verification / CCC 核验** from the menu.\n"
+        "2. Upload one PDF or image.\n"
+        "3. Click **Start / 开始解析** to run the pipeline.\n"
+        "4. Review or download the extracted content."
+    )
+
+
 def render_upload_preview(uploaded_file: Any) -> None:
     suffix = Path(uploaded_file.name).suffix.lower()
-    with st.container(border=True):
-        st.subheader("Selected document / 已选文档")
+    st.subheader("Selected document / 已选文档")
+    # Bound the viewport so tall source files scroll instead of growing the page.
+    with st.container(border=True, height=520):
         if suffix in IMAGE_SUFFIXES:
             st.image(
                 uploaded_file.getvalue(),
@@ -29,27 +58,40 @@ def render_upload_preview(uploaded_file: Any) -> None:
 
 def render_result(result: DocumentResult) -> None:
     st.subheader("Extraction result / 解析结果")
-    metrics = st.columns(4)
-    metrics[0].metric("File type / 文件类型", result.file_type)
-    metrics[1].metric("Category / 文档类别", str(result.doc_category))
-    metrics[2].metric(
-        "Confidence / 置信度",
-        (
-            f"{result.category_confidence:.0%}"
-            if result.category_confidence is not None
-            else "N/A"
-        ),
-    )
-    metrics[3].metric(
-        "Pages / 页数",
-        str(result.page_count) if result.page_count is not None else "N/A",
-    )
+    category = str(result.doc_category)
+    category_color = {
+        "Authorization Document": "blue",
+        "CCC Certification Document": "green",
+        "Other": "gray",
+    }.get(category, "gray")
+
+    with st.container(border=True):
+        st.caption("DOCUMENT METADATA / 文件元数据")
+        name_column, type_column, category_column = st.columns([2, 1, 2])
+        with name_column:
+            st.caption(":material/description: File name / 文件名")
+            st.markdown(f"**{result.file_name}**")
+        with type_column:
+            st.caption(":material/draft: File type / 文件类型")
+            st.badge(result.file_type.upper(), color="gray")
+        with category_column:
+            st.caption(":material/category: Category / 文档类别")
+            st.badge(
+                category,
+                icon=":material/verified:",
+                color=category_color,
+            )
 
     if result.category_reasoning:
-        st.info(f"Classification reasoning / 分类依据: {result.category_reasoning}")
+        with st.container(border=True):
+            st.markdown("**:material/fact_check: Classification reasoning / 分类依据**")
+            st.write(result.category_reasoning)
 
     content_key = hashlib.sha256(result.full_content.encode("utf-8")).hexdigest()[:12]
     with st.expander("Full content / 完整内容", expanded=False):
+        st.caption(
+            "The fixed-height viewer scrolls vertically. / 固定高度区域支持垂直滚动。"
+        )
         st.text_area(
             "Extracted text / 提取文本",
             value=result.full_content,
