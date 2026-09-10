@@ -360,6 +360,8 @@ dependencies = [
     { name = "langchain-community" },
     { name = "langchain-ollama" },
     { name = "langchain-openai" },
+    { name = "langchain-qwq" },
+    { name = "pypdf" },
     { name = "python-dotenv" },
     { name = "streamlit", extra = ["pdf"] },
 ]
@@ -377,6 +379,8 @@ requires-dist = [
     { name = "langchain-community", specifier = ">=0.4.2" },
     { name = "langchain-ollama", specifier = ">=1.1.0" },
     { name = "langchain-openai", specifier = ">=1.6.0" },
+    { name = "langchain-qwq", specifier = ">=0.3.5" },
+    { name = "pypdf", specifier = ">=6.18.0" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "streamlit", extras = ["pdf"], specifier = ">=1.63.0" },
 ]
@@ -781,6 +785,15 @@ wheels = [
 ]
 
 [[package]]
+name = "json-repair"
+version = "0.53.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b6/4e/f92634077c08208df2f7d5999af3288f29bd4348849ba99fdd34f59689f4/json_repair-0.53.1.tar.gz", hash = "sha256:9eacf70954399c49f29c4723e3b899088dab096795b70c061d0421af720b35fa", size = 35947, upload-time = "2025-11-18T11:23:14.437Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1b/52/afc5ba813be79f3d34c4cb88dea63a91c2e403a899168455d2c6e56cadfb/json_repair-0.53.1-py3-none-any.whl", hash = "sha256:6d80d725f747e55373d098f883bd8c48c55c24f80b034458f5cf7e82834c803f", size = 27601, upload-time = "2025-11-18T11:23:13.012Z" },
+]
+
+[[package]]
 name = "jsonpatch"
 version = "1.33"
 source = { registry = "https://pypi.org/simple" }
@@ -941,6 +954,28 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/14/56/913599f2f9cec8524868929f12d72b2ede377a6056ca8a40a32bdadfa535/langchain_protocol-0.0.19.tar.gz", hash = "sha256:79d90a1425122ac87e8052e2ec054fbd09c3edbf341bdfb6397112a495c7bf8c", size = 6265, upload-time = "2026-08-26T21:12:00.703Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/80/c9/f6cbf357d48ccbd18bb394433b1fd7ad9be004eed9377ad08bb85777e5e6/langchain_protocol-0.0.19-py3-none-any.whl", hash = "sha256:4cdf879a492a35980fd859ae792d3c65458ccaae504e183c9a10d7eac1f0720f", size = 7327, upload-time = "2026-08-26T21:11:59.781Z" },
+]
+
+[[package]]
+name = "langchain-qwq"
+version = "0.3.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "json-repair" },
+    { name = "langchain" },
+    { name = "langchain-core" },
+    { name = "langchain-openai" },
+    { name = "langgraph" },
+    { name = "langgraph-checkpoint" },
+    { name = "langsmith" },
+    { name = "orjson" },
+    { name = "pygments" },
+    { name = "requests" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/27/32/3bf30889a591e30832f4efd6c2137a0fb8aef61964be872f807be8bf04db/langchain_qwq-0.3.5.tar.gz", hash = "sha256:f11dc2965ed848ae2b7be77fd689243cba13400fcd86b5da0d512ed3cd74d0e7", size = 17984, upload-time = "2026-05-20T14:36:43.995Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e6/3b/9b2611dff69d5b1068767a249fc433bded3dd5ab8665b3e4cc7e06f3622c/langchain_qwq-0.3.5-py3-none-any.whl", hash = "sha256:3681e7a9c2b93ade2dfc5fcf0e5dbbc342a133f71b4217eb52354b31e4d4cada", size = 17882, upload-time = "2026-05-20T14:36:42.457Z" },
 ]
 
 [[package]]
@@ -1790,6 +1825,24 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f4/c9/f71032fca47ecc09d30904d9a610234b07139f89eabc2f054b141edcc30f/pydeck-0.9.3.tar.gz", hash = "sha256:695775cbfe51f5fdffbd9735ba469987fdc5efc96bc40a0ee4808170509c78b2", size = 5900912, upload-time = "2026-07-02T23:27:08.704Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6f/34/3998411437aff304a9ed4fa37a6fe1ef3132bcd2b5eac59851b80c86123c/pydeck-0.9.3-py2.py3-none-any.whl", hash = "sha256:d8a47c11c81fb12d51b1feb42427ff4f0e13cb599e48931021b2cba98b6849a6", size = 11428091, upload-time = "2026-07-02T23:27:06.399Z" },
+]
+
+[[package]]
+name = "pygments"
+version = "2.21.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/49/2e/ced460408999b33da6b31b0021b0f37d329e202d4169aeb164493778f25b/pygments-2.21.0.tar.gz", hash = "sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c", size = 5005329, upload-time = "2026-08-17T08:02:48.824Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/46/17f022dd3e953bf20a04a028a21ec746d942f8d2af30fa0f124fa0e6a684/pygments-2.21.0-py3-none-any.whl", hash = "sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9", size = 1250147, upload-time = "2026-08-17T08:02:44.912Z" },
+]
+
+[[package]]
+name = "pypdf"
+version = "6.18.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c2/c3/9fa0666f280552bd3833562d985b785fce1ddb3804937edd2fd6a3f2bdb3/pypdf-6.18.0.tar.gz", hash = "sha256:ae58b7d93c22c169ffb02c3b06321c45c4f223b4916536568adb57d789d95d01", size = 7024871, upload-time = "2026-09-07T16:48:16.444Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/a5/d5922a078c9a612327681d4793404f82998f4d66213add6fdc0659245856/pypdf-6.18.0-py3-none-any.whl", hash = "sha256:05b762b77bcb9dcb4a7c91fcf5dded585b25bee7269ab3d3001d7c55fa1b324b", size = 393848, upload-time = "2026-09-07T16:48:14.254Z" },
 ]
 
 [[package]]

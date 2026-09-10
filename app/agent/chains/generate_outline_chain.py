@@ -1,9 +1,15 @@
+import os
+
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_qwq import ChatQwen
 from pydantic import BaseModel, Field
 
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+# llm = ChatOllama(temperature=0, model="gemma3:270m")
+# llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+llm = ChatQwen(
+    temperature=0, model="qwen3.8-max", base_url=os.getenv("DASHSCOPE_BASE_URL")
+)
 
 template = """
 #### 角色

@@ -1,8 +1,9 @@
 from typing import Any
 
 from langchain_community.document_loaders import PyPDFLoader
-from logger_config import logger
-from state import GraphState
+
+from app.agent.state import GraphState
+from app.logger_config import logger
 
 
 def load_docs(state: GraphState) -> dict[str, Any]:

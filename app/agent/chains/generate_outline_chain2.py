@@ -1,10 +1,15 @@
+import os
+
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import PromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_qwq import ChatQwen
 from pydantic import BaseModel, Field
 
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.5)
-
+# llm = ChatOllama(temperature=0, model="gemma3:270m")
+# llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+llm = ChatQwen(
+    temperature=0, model="qwen3.8-max", base_url=os.getenv("DASHSCOPE_BASE_URL")
+)
 template = """
 #### 角色
 您是一位资深的文档撰写专家，擅长优化和细化投标书的大纲结构。您的任务是基于用户提供的项目总结（summarizations）和初步大纲（outline），

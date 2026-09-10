@@ -1,9 +1,9 @@
 from typing import Any
 
-from chains.generate_outline_chain import generate_outline_chain
-from chains.generate_outline_chain2 import generate_outline_chain2
-from logger_config import logger
-from state import GraphState
+from app.agent.chains.generate_outline_chain import generate_outline_chain
+from app.agent.chains.generate_outline_chain2 import generate_outline_chain2
+from app.agent.state import GraphState
+from app.logger_config import logger
 
 
 def generate_outline(state: GraphState) -> dict[str, Any]:
