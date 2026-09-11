@@ -98,3 +98,70 @@ class TamperingReport(BaseModel):
     summary: str = Field(min_length=1)
     limitations: str = Field(min_length=1)
     pages_analyzed: int = Field(ge=1)
+
+
+class CertificateFieldName(StrEnum):
+    CERTIFICATE_NUMBER = "Certificate number"
+    STATUS = "Certificate status"
+    HOLDER = "Certificate holder"
+    MANUFACTURER = "Manufacturer"
+    FACTORY = "Production factory"
+    PRODUCT = "Product name"
+    MODEL = "Models and specifications"
+    STANDARDS = "Applicable standards"
+    ISSUING_BODY = "Issuing certification body"
+    ISSUE_DATE = "Issue date"
+    VALID_UNTIL = "Valid until"
+
+
+class CNCAEvidence(BaseModel):
+    """Normalized fields visible in user-provided CNCA result screenshots."""
+
+    certificate_number: str | None = None
+    certificate_status: str | None = None
+    certificate_holder: str | None = None
+    manufacturer: str | None = None
+    production_factory: str | None = None
+    product_name: str | None = None
+    models_and_specifications: str | None = None
+    applicable_standards: str | None = None
+    issuing_certification_body: str | None = None
+    issue_date: str | None = None
+    valid_until: str | None = None
+    extraction_notes: str | None = None
+    source_image_count: int = Field(ge=1)
+
+
+class InfoComparisonOutcome(StrEnum):
+    MATCH = "Match"
+    MISMATCH = "Mismatch"
+    MISSING_SOURCE = "Missing from certificate"
+    MISSING_CNCA = "Missing from CNCA evidence"
+    INCONCLUSIVE = "Inconclusive"
+
+
+class InfoCheckStatus(StrEnum):
+    ALL_MATCHED = "All Matched"
+    MISMATCH_FOUND = "Mismatch Found"
+    INCONCLUSIVE = "Inconclusive"
+
+
+class InfoComparisonItem(BaseModel):
+    field_name: CertificateFieldName
+    source_value: str | None = None
+    cnca_value: str | None = None
+    outcome: InfoComparisonOutcome
+    explanation: str = Field(min_length=1)
+
+
+class InfoComparisonReport(BaseModel):
+    """Compares certificate text with screenshot evidence, not CNCA directly."""
+
+    check_type: Literal["CNCA Screenshot Information Comparison"] = (
+        "CNCA Screenshot Information Comparison"
+    )
+    status: InfoCheckStatus
+    comparisons: list[InfoComparisonItem] = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    limitations: str = Field(min_length=1)
+    evidence_image_count: int = Field(ge=1)

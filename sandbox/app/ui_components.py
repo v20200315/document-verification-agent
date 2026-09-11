@@ -5,7 +5,12 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
-from sandbox.src.schemas import DocumentResult, TamperingReport
+from sandbox.src.info_checker import extract_certificate_number
+from sandbox.src.schemas import (
+    DocumentResult,
+    InfoComparisonReport,
+    TamperingReport,
+)
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
@@ -177,3 +182,95 @@ def render_tampering_report(report: TamperingReport) -> None:
         f"局限性：{report.limitations}",
         icon=":material/info:",
     )
+
+
+def render_info_comparison_report(report: InfoComparisonReport) -> None:
+    st.subheader("CNCA 信息比对报告")
+    status = str(report.status)
+    status_text = {
+        "All Matched": "全部一致",
+        "Mismatch Found": "发现不一致",
+        "Inconclusive": "无法完整判断",
+    }.get(status, "无法完整判断")
+    status_color = {
+        "All Matched": "green",
+        "Mismatch Found": "red",
+        "Inconclusive": "orange",
+    }.get(status, "gray")
+
+    with st.container(border=True):
+        summary_column, status_column, image_column = st.columns([3, 1, 1])
+        with summary_column:
+            st.caption(":material/summarize: 比对摘要")
+            st.write(report.summary)
+        with status_column:
+            st.caption(":material/fact_check: 总体结果")
+            st.badge(status_text, color=status_color)
+        with image_column:
+            st.caption(":material/imagesmode: 证据截图")
+            st.markdown(f"**{report.evidence_image_count} 张**")
+
+    field_labels = {
+        "Certificate number": "证书编号",
+        "Certificate status": "证书状态",
+        "Certificate holder": "证书持有人",
+        "Manufacturer": "制造商",
+        "Production factory": "生产厂",
+        "Product name": "产品名称",
+        "Models and specifications": "型号与规格",
+        "Applicable standards": "适用标准",
+        "Issuing certification body": "发证机构",
+        "Issue date": "发证日期",
+        "Valid until": "有效期至",
+    }
+    outcome_labels = {
+        "Match": "一致",
+        "Mismatch": "不一致",
+        "Missing from certificate": "证书中缺失",
+        "Missing from CNCA evidence": "CNCA 截图中缺失",
+        "Inconclusive": "无法判断",
+    }
+    outcome_colors = {
+        "Match": "green",
+        "Mismatch": "red",
+        "Missing from certificate": "orange",
+        "Missing from CNCA evidence": "orange",
+        "Inconclusive": "gray",
+    }
+
+    st.markdown("**逐项比对**")
+    for item in report.comparisons:
+        outcome = str(item.outcome)
+        with st.container(border=True):
+            field_column, outcome_column = st.columns([4, 1])
+            field_column.markdown(
+                f"**{field_labels.get(str(item.field_name), str(item.field_name))}**"
+            )
+            outcome_column.badge(
+                outcome_labels.get(outcome, "无法判断"),
+                color=outcome_colors.get(outcome, "gray"),
+            )
+            source_column, cnca_column = st.columns(2)
+            source_column.caption("CCC 文件内容")
+            source_column.write(item.source_value or "未提取到")
+            cnca_column.caption("CNCA 截图内容")
+            cnca_column.write(item.cnca_value or "未提取到")
+            st.caption(f"说明：{item.explanation}")
+
+    st.warning(
+        f"局限性：{report.limitations}",
+        icon=":material/info:",
+    )
+
+
+def render_certificate_number(result: DocumentResult) -> None:
+    certificate_number = extract_certificate_number(result.full_content)
+    with st.container(border=True):
+        st.caption(":material/badge: Certificate Number / 证书编号")
+        if certificate_number:
+            st.code(certificate_number, language=None)
+        else:
+            st.warning(
+                "未能从 CCC 文件中识别证书编号，请查看完整提取内容并手动核对。",
+                icon=":material/warning:",
+            )

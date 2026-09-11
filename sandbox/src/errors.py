@@ -19,3 +19,7 @@ class ExtractionError(DocumentPipelineError):
 
 class TamperingAnalysisError(DocumentPipelineError):
     """Raised when the visual tampering checkpoint cannot be completed."""
+
+
+class InfoCheckError(DocumentPipelineError):
+    """Raised when CNCA screenshot extraction or comparison cannot complete."""
