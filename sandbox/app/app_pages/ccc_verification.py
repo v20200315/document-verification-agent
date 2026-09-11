@@ -11,10 +11,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from sandbox.app.pipeline_service import (
+    analyze_uploaded_document,
     is_api_configured,
     process_uploaded_document,
 )
-from sandbox.app.ui_components import render_result, render_upload_preview
+from sandbox.app.ui_components import (
+    render_result,
+    render_tampering_report,
+    render_upload_preview,
+)
 from sandbox.src.errors import DocumentPipelineError
 
 # The generation gives the uploader a fresh identity after a reset.
@@ -24,6 +29,9 @@ st.session_state.setdefault("active_upload_fingerprint", None)
 # Result and error persist while navigating, but reset for each new document.
 st.session_state.setdefault("latest_document_result", None)
 st.session_state.setdefault("latest_processing_error", None)
+# Tampering is an optional second call tied to the active upload fingerprint.
+st.session_state.setdefault("latest_tampering_report", None)
+st.session_state.setdefault("latest_tampering_error", None)
 
 
 def reset_document() -> None:
@@ -33,6 +41,8 @@ def reset_document() -> None:
     st.session_state.active_upload_fingerprint = None
     st.session_state.latest_document_result = None
     st.session_state.latest_processing_error = None
+    st.session_state.latest_tampering_report = None
+    st.session_state.latest_tampering_error = None
 
 
 st.title("CCC document verification / CCC 文档核验")
@@ -63,6 +73,8 @@ if uploaded_file is None:
         st.session_state.active_upload_fingerprint = None
         st.session_state.latest_document_result = None
         st.session_state.latest_processing_error = None
+        st.session_state.latest_tampering_report = None
+        st.session_state.latest_tampering_error = None
     st.info(
         "Choose a document to begin. Processing will not start "
         "automatically. / 请选择文档；上传后不会自动调用模型。"
@@ -77,6 +89,8 @@ else:
         st.session_state.active_upload_fingerprint = upload_fingerprint
         st.session_state.latest_document_result = None
         st.session_state.latest_processing_error = None
+        st.session_state.latest_tampering_report = None
+        st.session_state.latest_tampering_error = None
 
     render_upload_preview(uploaded_file)
 
@@ -98,6 +112,8 @@ else:
     if start_clicked:
         st.session_state.latest_document_result = None
         st.session_state.latest_processing_error = None
+        st.session_state.latest_tampering_report = None
+        st.session_state.latest_tampering_error = None
         try:
             with st.spinner(
                 "Extracting and classifying… / 正在提取并分类…",
@@ -121,3 +137,45 @@ else:
 
     if st.session_state.latest_document_result is not None:
         render_result(st.session_state.latest_document_result)
+        st.subheader("Authenticity checks / 真伪核验检查")
+        st.caption(
+            "Visual tampering analysis is one independent checkpoint; "
+            "it does not confirm authenticity. / "
+            "视觉篡改分析只是独立检查项之一，并不能确认文件真伪。"
+        )
+        analyze_clicked = st.button(
+            "Analyze tampering risk / 检测篡改风险",
+            icon=":material/image_search:",
+            type="primary",
+            key=f"analyze_tampering_{upload_fingerprint}",
+        )
+
+        if analyze_clicked:
+            st.session_state.latest_tampering_report = None
+            st.session_state.latest_tampering_error = None
+            try:
+                with st.spinner(
+                    "Analyzing original document pixels… / 正在分析原始文档像素…",
+                    show_time=True,
+                ):
+                    st.session_state.latest_tampering_report = (
+                        analyze_uploaded_document(
+                            uploaded_file.name,
+                            uploaded_bytes,
+                        )
+                    )
+            except DocumentPipelineError as exc:
+                st.session_state.latest_tampering_error = str(exc)
+            except Exception as exc:  # noqa: BLE001
+                st.session_state.latest_tampering_error = (
+                    f"{exc.__class__.__name__}: {exc}"
+                )
+
+        if st.session_state.latest_tampering_error:
+            st.error(
+                "Tampering analysis failed / 篡改分析失败: "
+                f"{st.session_state.latest_tampering_error}"
+            )
+
+        if st.session_state.latest_tampering_report is not None:
+            render_tampering_report(st.session_state.latest_tampering_report)

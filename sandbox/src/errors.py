@@ -15,3 +15,7 @@ class DocumentLoadError(DocumentPipelineError):
 
 class ExtractionError(DocumentPipelineError):
     """Raised when complete content extraction cannot be completed."""
+
+
+class TamperingAnalysisError(DocumentPipelineError):
+    """Raised when the visual tampering checkpoint cannot be completed."""

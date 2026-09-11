@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
-from sandbox.src.schemas import DocumentResult
+from sandbox.src.schemas import DocumentResult, TamperingReport
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
@@ -107,3 +107,61 @@ def render_result(result: DocumentResult) -> None:
             icon=":material/download:",
             key=f"download_{content_key}",
         )
+
+
+def render_tampering_report(report: TamperingReport) -> None:
+    st.subheader("Tampering-risk checkpoint / 篡改风险检查")
+    status_color = {
+        "No Obvious Indicators": "green",
+        "Review Required": "orange",
+        "Inconclusive": "gray",
+    }.get(str(report.status), "gray")
+    risk_color = {
+        "Low": "green",
+        "Medium": "orange",
+        "High": "red",
+        "Inconclusive": "gray",
+    }.get(str(report.risk_level), "gray")
+
+    with st.container(border=True):
+        columns = st.columns([2, 1, 1])
+        with columns[0]:
+            st.caption(":material/checklist: Check / 检查项")
+            st.markdown(f"**{report.check_type}**")
+        with columns[1]:
+            st.caption(":material/task_alt: Status / 状态")
+            st.badge(str(report.status), color=status_color)
+        with columns[2]:
+            st.caption(":material/warning: Risk / 风险")
+            st.badge(str(report.risk_level), color=risk_color)
+
+        st.markdown("**Summary / 摘要**")
+        st.write(report.summary)
+
+    st.markdown("**Findings / 发现**")
+    if report.findings:
+        for index, finding in enumerate(report.findings, start=1):
+            with st.container(border=True):
+                heading, severity = st.columns([4, 1])
+                heading.markdown(
+                    f"**{index}. Page {finding.page_number} — {finding.location}**"
+                )
+                severity.badge(
+                    str(finding.severity),
+                    color={
+                        "Low": "gray",
+                        "Medium": "orange",
+                        "High": "red",
+                    }.get(str(finding.severity), "gray"),
+                )
+                st.write(finding.observation)
+    else:
+        st.caption(
+            "No specific visual tampering indicators were reported. / "
+            "未报告具体的视觉篡改迹象。"
+        )
+
+    st.warning(
+        f"Limitations / 局限性: {report.limitations}",
+        icon=":material/info:",
+    )

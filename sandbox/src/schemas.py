@@ -51,3 +51,50 @@ class DocumentResult(BaseModel):
     category_reasoning: str | None = None
     full_content: str = Field(min_length=1)
     page_count: int | None = Field(default=None, ge=1)
+
+
+class TamperingSeverity(StrEnum):
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+
+
+class TamperingRisk(StrEnum):
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    INCONCLUSIVE = "Inconclusive"
+
+
+class TamperingStatus(StrEnum):
+    NO_OBVIOUS_INDICATORS = "No Obvious Indicators"
+    REVIEW_REQUIRED = "Review Required"
+    INCONCLUSIVE = "Inconclusive"
+
+
+class TamperingFinding(BaseModel):
+    page_number: int = Field(ge=1)
+    location: str = Field(min_length=1)
+    observation: str = Field(min_length=1)
+    severity: TamperingSeverity
+
+
+class PageTamperingAssessment(BaseModel):
+    page_number: int = Field(ge=1)
+    risk_level: TamperingRisk
+    suspected_tampering: bool | None = None
+    findings: list[TamperingFinding] = Field(default_factory=list)
+    summary: str = Field(min_length=1)
+
+
+class TamperingReport(BaseModel):
+    """A visual-risk checkpoint, deliberately not an authenticity verdict."""
+
+    check_type: Literal["Visual Tampering Analysis"] = "Visual Tampering Analysis"
+    status: TamperingStatus
+    risk_level: TamperingRisk
+    suspected_tampering: bool | None = None
+    findings: list[TamperingFinding] = Field(default_factory=list)
+    summary: str = Field(min_length=1)
+    limitations: str = Field(min_length=1)
+    pages_analyzed: int = Field(ge=1)

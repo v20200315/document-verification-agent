@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 
 from sandbox.src.errors import DocumentLoadError
 from sandbox.src.pipeline import DocumentPipeline
-from sandbox.src.schemas import DocumentResult
+from sandbox.src.schemas import DocumentResult, TamperingReport
+from sandbox.src.tampering import TamperingAnalyzer
 
 SANDBOX_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = SANDBOX_DIR.parent
@@ -54,6 +55,28 @@ def process_uploaded_document(
         return pipeline_factory().run(temporary_path)
     finally:
         # Failed LLM calls must not leave user documents on the server.
+        shutil.rmtree(temporary_dir, ignore_errors=True)
+
+
+def analyze_uploaded_document(
+    file_name: str,
+    data: bytes,
+    analyzer_factory: Callable[[], TamperingAnalyzer] = (TamperingAnalyzer.from_env),
+) -> TamperingReport:
+    """Run the independent visual checkpoint against the original file bytes."""
+    safe_name = _safe_file_name(file_name)
+    if not data:
+        raise DocumentLoadError("The uploaded file is empty.")
+
+    load_project_environment()
+    UPLOAD_TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    temporary_dir = Path(tempfile.mkdtemp(prefix="tampering-", dir=UPLOAD_TEMP_ROOT))
+    temporary_path = temporary_dir / safe_name
+
+    try:
+        temporary_path.write_bytes(data)
+        return analyzer_factory().analyze(temporary_path)
+    finally:
         shutil.rmtree(temporary_dir, ignore_errors=True)
 
 
