@@ -10,7 +10,7 @@ from sandbox.src.schemas import (
     TamperingRisk,
     TamperingStatus,
 )
-from sandbox.src.tampering import TamperingAnalyzer
+from sandbox.src.tampering import LIMITATIONS, SYSTEM_PROMPT, TamperingAnalyzer
 
 
 class StructuredVisionModel:
@@ -60,7 +60,9 @@ def test_image_tampering_analysis_returns_independent_checkpoint(
     assert report.risk_level is TamperingRisk.LOW
     assert report.suspected_tampering is False
     assert report.pages_analyzed == 1
-    assert "not proof of authenticity" in report.limitations
+    assert "不能作为文件真实性证明" in report.limitations
+    assert "简体中文" in SYSTEM_PROMPT
+    assert report.limitations == LIMITATIONS
     assert model.options["method"] == "json_schema"
 
 

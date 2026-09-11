@@ -27,10 +27,9 @@ from sandbox.src.schemas import (
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 SUPPORTED_SUFFIXES = IMAGE_SUFFIXES | {".pdf"}
 LIMITATIONS = (
-    "This is an AI-assisted visual tampering-risk assessment, not proof of "
-    "authenticity. Scanning, resizing, compression, and image enhancement can "
-    "create false positives or conceal edits. Confirm authenticity through "
-    "digital-signature and official registry checks."
+    "本报告仅为 AI 辅助的视觉篡改风险评估，不能作为文件真实性证明。"
+    "扫描、缩放、压缩和图像增强可能产生误报，也可能掩盖编辑痕迹。"
+    "请结合数字签名验证和官方数据库查询进一步确认。"
 )
 
 SYSTEM_PROMPT = """You perform cautious visual document-tampering analysis.
@@ -42,7 +41,10 @@ from professional appearance. Normal scanning, shadows, perspective,
 compression, and photography artifacts must not be labeled as tampering
 without specific evidence. If image quality is insufficient, return an
 Inconclusive risk. This checkpoint does not validate registries, issuers,
-certificate status, cryptographic signatures, or product scope."""
+certificate status, cryptographic signatures, or product scope.
+All human-readable output fields must use concise Simplified Chinese
+(简体中文), including location, observation, and summary. Keep only schema
+enum values in English."""
 
 
 class TamperingAnalyzer:
@@ -112,7 +114,8 @@ class TamperingAnalyzer:
                                 "text": (
                                     f"Analyze page {page_number}. Every finding "
                                     "must use this page number and identify a "
-                                    "specific location and visible observation."
+                                    "specific location and visible observation. "
+                                    "所有面向用户的文字必须使用简体中文。"
                                 ),
                             },
                             {
@@ -255,7 +258,7 @@ def _assemble_report(
         status = TamperingStatus.NO_OBVIOUS_INDICATORS
 
     summary = " ".join(
-        f"Page {item.page_number}: {item.summary}" for item in assessments
+        f"第 {item.page_number} 页：{item.summary}" for item in assessments
     )
     return TamperingReport(
         status=status,

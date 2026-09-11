@@ -37,8 +37,8 @@ def test_tampering_checkpoint_requires_explicit_click(
         status=TamperingStatus.NO_OBVIOUS_INDICATORS,
         risk_level=TamperingRisk.LOW,
         suspected_tampering=False,
-        summary="No visible indicators were identified.",
-        limitations="This is not proof of authenticity.",
+        summary="未发现明显的视觉篡改迹象。",
+        limitations="本报告不能作为文件真实性证明。",
         pages_analyzed=1,
     )
 
@@ -77,7 +77,4 @@ def test_tampering_checkpoint_requires_explicit_click(
 
         assert not app.exception
         assert tampering_mock.call_count == 1
-        assert any(
-            heading.value == "Tampering-risk checkpoint / 篡改风险检查"
-            for heading in app.subheader
-        )
+        assert any(heading.value == "篡改风险检查报告" for heading in app.subheader)

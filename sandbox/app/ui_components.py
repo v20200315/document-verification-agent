@@ -110,44 +110,59 @@ def render_result(result: DocumentResult) -> None:
 
 
 def render_tampering_report(report: TamperingReport) -> None:
-    st.subheader("Tampering-risk checkpoint / 篡改风险检查")
+    st.subheader("篡改风险检查报告")
     status_color = {
         "No Obvious Indicators": "green",
         "Review Required": "orange",
         "Inconclusive": "gray",
     }.get(str(report.status), "gray")
+    status_text = {
+        "No Obvious Indicators": "未发现明显篡改迹象",
+        "Review Required": "需要人工复核",
+        "Inconclusive": "无法确定",
+    }.get(str(report.status), "无法确定")
     risk_color = {
         "Low": "green",
         "Medium": "orange",
         "High": "red",
         "Inconclusive": "gray",
     }.get(str(report.risk_level), "gray")
+    risk_text = {
+        "Low": "低",
+        "Medium": "中",
+        "High": "高",
+        "Inconclusive": "无法确定",
+    }.get(str(report.risk_level), "无法确定")
 
     with st.container(border=True):
         columns = st.columns([2, 1, 1])
         with columns[0]:
-            st.caption(":material/checklist: Check / 检查项")
-            st.markdown(f"**{report.check_type}**")
+            st.caption(":material/checklist: 检查项")
+            st.markdown("**视觉篡改分析**")
         with columns[1]:
-            st.caption(":material/task_alt: Status / 状态")
-            st.badge(str(report.status), color=status_color)
+            st.caption(":material/task_alt: 状态")
+            st.badge(status_text, color=status_color)
         with columns[2]:
-            st.caption(":material/warning: Risk / 风险")
-            st.badge(str(report.risk_level), color=risk_color)
+            st.caption(":material/warning: 风险等级")
+            st.badge(risk_text, color=risk_color)
 
-        st.markdown("**Summary / 摘要**")
+        st.markdown("**分析摘要**")
         st.write(report.summary)
 
-    st.markdown("**Findings / 发现**")
+    st.markdown("**风险发现**")
     if report.findings:
         for index, finding in enumerate(report.findings, start=1):
             with st.container(border=True):
                 heading, severity = st.columns([4, 1])
                 heading.markdown(
-                    f"**{index}. Page {finding.page_number} — {finding.location}**"
+                    f"**{index}. 第 {finding.page_number} 页 — {finding.location}**"
                 )
                 severity.badge(
-                    str(finding.severity),
+                    {
+                        "Low": "低",
+                        "Medium": "中",
+                        "High": "高",
+                    }.get(str(finding.severity), "未知"),
                     color={
                         "Low": "gray",
                         "Medium": "orange",
@@ -156,12 +171,9 @@ def render_tampering_report(report: TamperingReport) -> None:
                 )
                 st.write(finding.observation)
     else:
-        st.caption(
-            "No specific visual tampering indicators were reported. / "
-            "未报告具体的视觉篡改迹象。"
-        )
+        st.caption("未报告具体的视觉篡改迹象。")
 
     st.warning(
-        f"Limitations / 局限性: {report.limitations}",
+        f"局限性：{report.limitations}",
         icon=":material/info:",
     )
