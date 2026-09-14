@@ -42,6 +42,12 @@ page = st.navigation(
             icon=":material/document_scanner:",
             url_path="image-pdf-to-text",
         ),
+        st.Page(
+            "app_pages/verify_test_report.py",
+            title="Verify Test Report",
+            icon=":material/assignment:",
+            url_path="verify-test-report",
+        ),
     ],
     position="sidebar",
     expanded=True,
