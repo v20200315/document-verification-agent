@@ -30,6 +30,12 @@ page = st.navigation(
             icon=":material/fact_check:",
             url_path="ccc-verification",
         ),
+        st.Page(
+            "app_pages/simple_rag.py",
+            title="Simple RAG",
+            icon=":material/chat:",
+            url_path="simple-rag",
+        ),
     ],
     position="sidebar",
     expanded=True,

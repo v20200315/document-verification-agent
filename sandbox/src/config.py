@@ -16,6 +16,7 @@ class Settings:
     base_url: str = DEFAULT_DASHSCOPE_BASE_URL
     vision_model: str = "qwen3-vl-plus"
     text_model: str = "qwen-plus"
+    embedding_model: str = "text-embedding-v4"
     request_timeout_seconds: float = 120.0
     max_retries: int = 3
     scanned_text_threshold: int = 40
@@ -37,6 +38,10 @@ class Settings:
             ),
             vision_model=os.getenv("QWEN_VISION_MODEL", "qwen3-vl-plus"),
             text_model=os.getenv("QWEN_TEXT_MODEL", "qwen-plus"),
+            embedding_model=os.getenv(
+                "QWEN_EMBEDDING_MODEL",
+                "text-embedding-v4",
+            ),
             request_timeout_seconds=_float_env("DASHSCOPE_TIMEOUT_SECONDS", 120.0),
             max_retries=_int_env("DASHSCOPE_MAX_RETRIES", 3),
             scanned_text_threshold=_int_env("PDF_SCANNED_TEXT_THRESHOLD", 40),

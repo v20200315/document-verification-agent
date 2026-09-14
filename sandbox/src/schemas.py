@@ -165,3 +165,22 @@ class InfoComparisonReport(BaseModel):
     summary: str = Field(min_length=1)
     limitations: str = Field(min_length=1)
     evidence_image_count: int = Field(ge=1)
+
+
+class RAGGeneratedAnswer(BaseModel):
+    """Provider response kept separate from trusted retrieval metadata."""
+
+    answer: str = Field(min_length=1)
+    has_sufficient_context: bool
+    cited_pages: list[int] = Field(default_factory=list)
+
+
+class RAGSource(BaseModel):
+    page_number: int = Field(ge=1)
+    excerpt: str = Field(min_length=1)
+
+
+class RAGAnswer(BaseModel):
+    answer: str = Field(min_length=1)
+    has_sufficient_context: bool
+    sources: list[RAGSource] = Field(default_factory=list)
