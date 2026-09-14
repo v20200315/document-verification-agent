@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,16 +13,15 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from sandbox.app.simple_rag.backend import RAGError
 from sandbox.app.simple_rag.service import (
-    KNOWLEDGE_PDF_PATH,
     is_api_configured,
-    knowledge_source_signature,
-    load_cached_rag,
+    load_uploaded_rag,
 )
 
-# Chat is session-local; the expensive PDF index is shared through cache_resource.
+# Upload identity and chat history are isolated to this application/session.
+st.session_state.setdefault("simple_rag_uploader_generation", 0)
+st.session_state.setdefault("simple_rag_active_fingerprint", None)
+st.session_state.setdefault("simple_rag_initialized_fingerprint", None)
 st.session_state.setdefault("simple_rag_messages", [])
-st.session_state.setdefault("simple_rag_source_signature", None)
-st.session_state.setdefault("simple_rag_initialized_signature", None)
 st.session_state.setdefault("simple_rag_error", None)
 
 
@@ -29,73 +29,101 @@ def clear_conversation() -> None:
     st.session_state.simple_rag_messages = []
 
 
-st.title("Simple RAG / PDF 问答")
-st.caption(
-    "Answers are grounded only in sandbox/knowledge/source.pdf. / "
-    "回答仅基于固定 PDF 知识库。"
-)
-
-api_ready = is_api_configured()
-try:
-    source_signature = knowledge_source_signature()
-    source_error = None
-except RAGError as exc:
-    source_signature = None
-    source_error = str(exc)
-
-if source_signature != st.session_state.simple_rag_source_signature:
-    st.session_state.simple_rag_source_signature = source_signature
-    st.session_state.simple_rag_initialized_signature = None
+def reset_rag() -> None:
+    current_key = f"simple_rag_upload_{st.session_state.simple_rag_uploader_generation}"
+    st.session_state.pop(current_key, None)
+    st.session_state.simple_rag_uploader_generation += 1
+    st.session_state.simple_rag_active_fingerprint = None
+    st.session_state.simple_rag_initialized_fingerprint = None
     st.session_state.simple_rag_messages = []
     st.session_state.simple_rag_error = None
 
-with st.container(border=True):
-    st.caption(":material/picture_as_pdf: Knowledge source / 知识库文件")
-    st.markdown(f"**`{KNOWLEDGE_PDF_PATH.name}`**")
-    st.caption(str(KNOWLEDGE_PDF_PATH))
 
-if source_error:
-    st.error(source_error)
-    st.info(
-        "Place one PDF at `sandbox/knowledge/source.pdf`, then rerun the page. / "
-        "请将一个 PDF 放到该路径后重新运行页面。"
-    )
+st.title("Simple RAG / PDF 问答")
+st.caption(
+    "Upload one text-based PDF, build its index, and ask grounded questions. / "
+    "上传一个文本型 PDF，建立索引后即可进行问答。"
+)
 
+api_ready = is_api_configured()
 if not api_ready:
     st.error(
-        "DASHSCOPE_API_KEY is not configured. PDF indexing and questions are "
+        "DASHSCOPE_API_KEY is not configured. Indexing and questions are "
         "disabled. / 未配置 DASHSCOPE_API_KEY。"
     )
 
+uploader_key = f"simple_rag_upload_{st.session_state.simple_rag_uploader_generation}"
+uploaded_file = st.file_uploader(
+    "Text-based PDF / 文本型 PDF",
+    type=["pdf"],
+    accept_multiple_files=False,
+    help="Upload one searchable PDF, up to 50 MB.",
+    key=uploader_key,
+)
+
 rag_runtime: tuple[Any, Any] | None = None
-if source_signature is not None and api_ready:
-    initialized = st.session_state.simple_rag_initialized_signature == source_signature
-    if not initialized:
-        st.info(
-            "First-time indexing may call Qwen-VL for scanned pages and create "
-            "embeddings. It will be cached for this PDF version. / "
-            "首次建立索引时，扫描页会调用 Qwen-VL，并生成向量索引。"
-        )
+if uploaded_file is None:
+    if st.session_state.simple_rag_active_fingerprint is not None:
+        st.session_state.simple_rag_active_fingerprint = None
+        st.session_state.simple_rag_initialized_fingerprint = None
+        st.session_state.simple_rag_messages = []
+        st.session_state.simple_rag_error = None
+    st.info(
+        "Choose a PDF containing selectable text. Image-only PDFs should first "
+        "be converted on the Image PDF to Text PDF page. / "
+        "请选择含可选择文字的 PDF；图片型 PDF 请先进行转换。"
+    )
+else:
+    pdf_data = uploaded_file.getvalue()
+    upload_fingerprint = hashlib.sha256(
+        uploaded_file.name.encode("utf-8") + b"\0" + pdf_data
+    ).hexdigest()
+    if upload_fingerprint != st.session_state.simple_rag_active_fingerprint:
+        st.session_state.simple_rag_active_fingerprint = upload_fingerprint
+        st.session_state.simple_rag_initialized_fingerprint = None
+        st.session_state.simple_rag_messages = []
+        st.session_state.simple_rag_error = None
+
+    with st.container(border=True):
+        name_column, size_column = st.columns([3, 1])
+        name_column.caption(":material/picture_as_pdf: PDF knowledge source")
+        name_column.markdown(f"**{uploaded_file.name}**")
+        size_column.caption(":material/data_usage: Size / 大小")
+        size_column.markdown(f"**{len(pdf_data) / (1024 * 1024):.2f} MB**")
+
+    initialized = (
+        st.session_state.simple_rag_initialized_fingerprint == upload_fingerprint
+    )
+    with st.container(horizontal=True):
         initialize_clicked = st.button(
             "Initialize knowledge base / 建立知识库",
             type="primary",
             icon=":material/database:",
-            key="initialize_simple_rag",
+            disabled=not api_ready,
+            key=f"initialize_simple_rag_{upload_fingerprint}",
         )
-    else:
-        initialize_clicked = False
+        st.button(
+            "New PDF / 新文件",
+            icon=":material/refresh:",
+            on_click=reset_rag,
+            key="reset_simple_rag",
+        )
 
     if initialize_clicked or initialized:
         try:
             with st.spinner(
-                "Indexing PDF… / 正在建立 PDF 索引…",
+                "Reading and indexing PDF… / 正在读取并建立索引…",
                 show_time=True,
             ):
-                rag_runtime = load_cached_rag(*source_signature)
-            st.session_state.simple_rag_initialized_signature = source_signature
+                rag_runtime = load_uploaded_rag(
+                    uploaded_file.name,
+                    pdf_data,
+                    upload_fingerprint,
+                )
+            st.session_state.simple_rag_initialized_fingerprint = upload_fingerprint
             st.session_state.simple_rag_error = None
         except Exception as exc:  # noqa: BLE001
-            st.session_state.simple_rag_initialized_signature = None
+            st.session_state.simple_rag_initialized_fingerprint = None
             st.session_state.simple_rag_error = f"{exc.__class__.__name__}: {exc}"
 
 if st.session_state.simple_rag_error:
@@ -103,10 +131,9 @@ if st.session_state.simple_rag_error:
 
 if rag_runtime is not None:
     rag, rag_index = rag_runtime
-    metrics = st.columns(3)
-    metrics[0].metric("Pages / 页数", rag_index.page_count)
-    metrics[1].metric("Scanned pages / 扫描页", rag_index.scanned_page_count)
-    metrics[2].metric("Chunks / 文本块", rag_index.chunk_count)
+    metrics = st.columns(2)
+    metrics[0].metric("Text pages / 文本页", rag_index.page_count)
+    metrics[1].metric("Chunks / 文本块", rag_index.chunk_count)
 
     if st.session_state.simple_rag_messages:
         st.button(
@@ -124,7 +151,8 @@ for message in st.session_state.simple_rag_messages:
             with st.expander("Sources / 来源", expanded=False):
                 for source in sources:
                     st.markdown(
-                        f"**Page {source['page_number']} / 第 {source['page_number']} 页**"
+                        f"**Page {source['page_number']} / "
+                        f"第 {source['page_number']} 页**"
                     )
                     st.write(source["excerpt"])
 

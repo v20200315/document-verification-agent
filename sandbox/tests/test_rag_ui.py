@@ -31,25 +31,26 @@ def test_simple_rag_page_initializes_and_answers(
     monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
     index = SimpleNamespace(
         page_count=5,
-        scanned_page_count=2,
         chunk_count=12,
     )
-    with (
-        patch(
-            "sandbox.app.simple_rag.service.knowledge_source_signature",
-            return_value=("/tmp/source.pdf", 123, 456),
-        ),
-        patch(
-            "sandbox.app.simple_rag.service.load_cached_rag",
-            return_value=(FakeRAG(), index),
-        ) as load_mock,
-    ):
+    with patch(
+        "sandbox.app.simple_rag.service.load_uploaded_rag",
+        return_value=(FakeRAG(), index),
+    ) as load_mock:
         app_path = Path(__file__).parents[1] / "app" / "streamlit_app.py"
         app = AppTest.from_file(app_path).run(timeout=10)
         app.switch_page("app_pages/simple_rag.py").run(timeout=10)
 
         assert not app.exception
         assert any(title.value == "Simple RAG / PDF 问答" for title in app.title)
+        assert load_mock.call_count == 0
+        app.file_uploader[0].upload(
+            "knowledge.pdf",
+            b"%PDF-text",
+            "application/pdf",
+        ).run(timeout=10)
+
+        assert load_mock.call_count == 0
         next(
             button
             for button in app.button
@@ -57,8 +58,13 @@ def test_simple_rag_page_initializes_and_answers(
         ).click().run(timeout=10)
 
         assert load_mock.call_count == 1
-        assert [metric.value for metric in app.metric] == ["5", "2", "12"]
+        assert [metric.value for metric in app.metric] == ["5", "12"]
         app.chat_input[0].set_value("证书有效期多久？").run(timeout=10)
 
         assert not app.exception
         assert any(markdown.value == "证书有效期为五年。" for markdown in app.markdown)
+
+        app.file_uploader[0].clear().run(timeout=10)
+        assert not app.exception
+        assert not app.metric
+        assert app.chat_input[0].disabled is True
