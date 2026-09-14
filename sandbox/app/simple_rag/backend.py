@@ -1,30 +1,27 @@
 from __future__ import annotations
 
+import base64
+import io
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pypdfium2 as pdfium
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from pydantic import ValidationError
+from PIL import Image
+from pydantic import BaseModel, Field, ValidationError
+from pypdf import PdfReader
 
 from sandbox.src.config import Settings
-from sandbox.src.errors import RAGError
-from sandbox.src.extractor import ContentExtractor
 from sandbox.src.llm import (
     MalformedModelResponse,
     build_models,
     invoke_with_retry,
-)
-from sandbox.src.loaders import DocumentLoader
-from sandbox.src.schemas import (
-    LoadedDocument,
-    RAGAnswer,
-    RAGGeneratedAnswer,
-    RAGSource,
+    response_text,
 )
 
 RAG_SYSTEM_PROMPT = """Answer the user's question using only the supplied PDF
@@ -34,25 +31,146 @@ and set has_sufficient_context to false. Do not use outside knowledge or invent
 facts. Answer in the language used by the question. When context is sufficient,
 cite the supporting page numbers in cited_pages."""
 
+OCR_SYSTEM_PROMPT = """Transcribe the complete content of this scanned PDF page.
+Do not summarize, translate, interpret, or omit text. Preserve reading order,
+headings, numbers, dates, and tables. Mark unreadable text as [unreadable].
+Return only the transcription."""
+
 NO_RETRIEVAL_ANSWER = "未能从 PDF 中检索到相关内容。请换一种方式提问。"
+
+
+class RAGError(RuntimeError):
+    """Error boundary owned exclusively by the Simple RAG application."""
+
+
+class RAGGeneratedAnswer(BaseModel):
+    answer: str = Field(min_length=1)
+    has_sufficient_context: bool
+    cited_pages: list[int] = Field(default_factory=list)
+
+
+class RAGSource(BaseModel):
+    page_number: int = Field(ge=1)
+    excerpt: str = Field(min_length=1)
+
+
+class RAGAnswer(BaseModel):
+    answer: str = Field(min_length=1)
+    has_sufficient_context: bool
+    sources: list[RAGSource] = Field(default_factory=list)
+
+
+@dataclass(slots=True)
+class RAGPage:
+    page_number: int
+    text: str | None = None
+    image_data_url: str | None = None
 
 
 @dataclass(slots=True)
 class RAGIndex:
-    vector_store: InMemoryVectorStore
+    vector_store: Any
     source_name: str
     page_count: int
     scanned_page_count: int
     chunk_count: int
 
 
-class SimplePDFRAG:
-    """Index one PDF once, then ground each answer in retrieved page chunks."""
+class PDFKnowledgeLoader:
+    """Load text pages directly and render only pages that require OCR."""
 
     def __init__(
         self,
-        loader: DocumentLoader,
-        scanned_page_extractor: ContentExtractor,
+        scanned_text_threshold: int = 40,
+        pdf_render_dpi: int = 180,
+    ) -> None:
+        self.scanned_text_threshold = scanned_text_threshold
+        self.pdf_render_dpi = pdf_render_dpi
+
+    def load(self, pdf_path: str | Path) -> list[RAGPage]:
+        path = Path(pdf_path).expanduser().resolve()
+        if not path.is_file():
+            raise RAGError(f"Knowledge PDF does not exist: {path}")
+        if path.suffix.lower() != ".pdf":
+            raise RAGError("The RAG knowledge source must be a PDF file.")
+
+        try:
+            reader = PdfReader(str(path))
+            if reader.is_encrypted and reader.decrypt("") == 0:
+                raise RAGError(f"Knowledge PDF {path.name} is password-protected.")
+            page_texts = [page.extract_text() or "" for page in reader.pages]
+        except RAGError:
+            raise
+        except Exception as exc:
+            raise RAGError(f"Unable to read {path.name}: {exc}") from exc
+
+        if not page_texts:
+            raise RAGError(f"Knowledge PDF {path.name} contains no pages.")
+
+        scanned_indices = {
+            index
+            for index, text in enumerate(page_texts)
+            if len("".join(text.split())) < self.scanned_text_threshold
+        }
+        rendered = self._render_pages(path, scanned_indices)
+        return [
+            RAGPage(
+                page_number=index + 1,
+                text=None if index in scanned_indices else text.strip(),
+                image_data_url=rendered.get(index),
+            )
+            for index, text in enumerate(page_texts)
+        ]
+
+    def _render_pages(
+        self,
+        path: Path,
+        page_indices: set[int],
+    ) -> dict[int, str]:
+        if not page_indices:
+            return {}
+
+        document = None
+        rendered: dict[int, str] = {}
+        try:
+            document = pdfium.PdfDocument(str(path))
+            scale = self.pdf_render_dpi / 72
+            for index in sorted(page_indices):
+                page = bitmap = image = None
+                try:
+                    page = document[index]
+                    bitmap = page.render(scale=scale)
+                    image = bitmap.to_pil()
+                    buffer = io.BytesIO()
+                    image.save(buffer, format="PNG")
+                    rendered[index] = _data_url(
+                        buffer.getvalue(),
+                        "image/png",
+                    )
+                finally:
+                    if isinstance(image, Image.Image):
+                        image.close()
+                    if bitmap is not None:
+                        bitmap.close()
+                    if page is not None:
+                        page.close()
+        except Exception as exc:
+            raise RAGError(
+                f"Unable to render scanned pages in {path.name}: {exc}"
+            ) from exc
+        finally:
+            if document is not None:
+                document.close()
+        return rendered
+
+
+class SimplePDFRAG:
+    """Own the complete indexing and answering flow for this application."""
+
+    def __init__(
+        self,
+        loader: PDFKnowledgeLoader,
+        vision_model: Any,
         embeddings: Any,
         answer_model: Any,
         max_attempts: int = 3,
@@ -61,7 +179,7 @@ class SimplePDFRAG:
         top_k: int = 4,
     ) -> None:
         self.loader = loader
-        self.scanned_page_extractor = scanned_page_extractor
+        self.vision_model = vision_model
         self.embeddings = embeddings
         self.max_attempts = max_attempts
         self.top_k = top_k
@@ -86,17 +204,14 @@ class SimplePDFRAG:
             base_url=settings.base_url,
             request_timeout=settings.request_timeout_seconds,
             max_retries=0,
+            check_embedding_ctx_length=False,
         )
         return cls(
-            loader=DocumentLoader(
+            loader=PDFKnowledgeLoader(
                 scanned_text_threshold=settings.scanned_text_threshold,
                 pdf_render_dpi=settings.pdf_render_dpi,
             ),
-            scanned_page_extractor=ContentExtractor(
-                text_model=text_model,
-                vision_model=vision_model,
-                max_attempts=settings.max_retries,
-            ),
+            vision_model=vision_model,
             embeddings=embeddings,
             answer_model=text_model,
             max_attempts=settings.max_retries,
@@ -108,12 +223,18 @@ class SimplePDFRAG:
 
     def build_index(self, pdf_path: str | Path) -> RAGIndex:
         path = Path(pdf_path).expanduser().resolve()
-        if path.suffix.lower() != ".pdf":
-            raise RAGError("The RAG knowledge source must be a PDF file.")
-
         try:
-            loaded = self.loader.load(path)
-            page_documents = self._page_documents(loaded)
+            pages = self.loader.load(path)
+            page_documents = [
+                Document(
+                    page_content=self._page_content(page),
+                    metadata={
+                        "page_number": page.page_number,
+                        "source": path.name,
+                    },
+                )
+                for page in pages
+            ]
             chunks = self.splitter.split_documents(page_documents)
             if not chunks:
                 raise RAGError(f"No readable content was found in {path.name}.")
@@ -127,8 +248,8 @@ class SimplePDFRAG:
         return RAGIndex(
             vector_store=vector_store,
             source_name=path.name,
-            page_count=loaded.page_count or len(loaded.pages),
-            scanned_page_count=sum(page.route == "vision" for page in loaded.pages),
+            page_count=len(pages),
+            scanned_page_count=sum(page.image_data_url is not None for page in pages),
             chunk_count=len(chunks),
         )
 
@@ -136,7 +257,6 @@ class SimplePDFRAG:
         clean_question = question.strip()
         if not clean_question:
             raise RAGError("Question cannot be empty.")
-
         try:
             retrieved = index.vector_store.similarity_search(
                 clean_question,
@@ -144,7 +264,6 @@ class SimplePDFRAG:
             )
         except Exception as exc:
             raise RAGError(f"PDF retrieval failed: {exc}") from exc
-
         if not retrieved:
             return RAGAnswer(
                 answer=NO_RETRIEVAL_ANSWER,
@@ -159,45 +278,48 @@ class SimplePDFRAG:
         except Exception as exc:
             raise RAGError(f"Unable to answer from the PDF: {exc}") from exc
 
-        sources = (
-            _sources_for_pages(retrieved, generated.cited_pages)
-            if generated.has_sufficient_context
-            else []
-        )
         return RAGAnswer(
             answer=generated.answer,
             has_sufficient_context=generated.has_sufficient_context,
-            sources=sources,
+            sources=(
+                _sources_for_pages(retrieved, generated.cited_pages)
+                if generated.has_sufficient_context
+                else []
+            ),
         )
 
-    def _page_documents(self, loaded: LoadedDocument) -> list[Document]:
-        scanned_pages = [page for page in loaded.pages if page.route == "vision"]
-        scanned_content: dict[int, str] = {}
-        if scanned_pages:
-            scanned_document = loaded.model_copy(update={"pages": scanned_pages})
-            extracted = self.scanned_page_extractor.extract(scanned_document)
-            scanned_content = {page.page_number: page.content for page in extracted}
-
-        documents = []
-        for page in loaded.pages:
-            content = (
-                page.text
-                if page.route == "text"
-                else scanned_content.get(page.page_number)
+    def _page_content(self, page: RAGPage) -> str:
+        if page.text and page.text.strip():
+            return page.text.strip()
+        if not page.image_data_url:
+            raise RAGError(f"Page {page.page_number} contains no readable data.")
+        try:
+            return invoke_with_retry(
+                lambda: self._ocr_page(page),
+                self.max_attempts,
             )
-            if content and content.strip():
-                documents.append(
-                    Document(
-                        page_content=content.strip(),
-                        metadata={
-                            "page_number": page.page_number,
-                            "source": loaded.file_name,
+        except Exception as exc:
+            raise RAGError(f"OCR failed for page {page.page_number}: {exc}") from exc
+
+    def _ocr_page(self, page: RAGPage) -> str:
+        response = self.vision_model.invoke(
+            [
+                SystemMessage(content=OCR_SYSTEM_PROMPT),
+                HumanMessage(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": f"Transcribe page {page.page_number}.",
                         },
-                    )
-                )
-        if not documents:
-            raise RAGError(f"No readable content was found in {loaded.file_name}.")
-        return documents
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": page.image_data_url},
+                        },
+                    ]
+                ),
+            ]
+        )
+        return response_text(response)
 
     def _answer_once(
         self,
@@ -221,13 +343,13 @@ class SimplePDFRAG:
                 ]
             )
             parsed = _parsed_value(response)
-            generated = (
+            answer = (
                 parsed
                 if isinstance(parsed, RAGGeneratedAnswer)
                 else RAGGeneratedAnswer.model_validate(parsed)
             )
-            _validate_citations(generated, retrieved)
-            return generated
+            _validate_citations(answer, retrieved)
+            return answer
         except (ValidationError, TypeError, ValueError, KeyError) as exc:
             raise MalformedModelResponse(
                 f"Invalid structured RAG answer: {exc}"
@@ -280,3 +402,8 @@ def _sources_for_pages(
         )
         seen_pages.add(page_number)
     return sources
+
+
+def _data_url(data: bytes, mime_type: str) -> str:
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"

@@ -15,34 +15,6 @@ from sandbox.src.schemas import (
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
 
-def render_dashboard() -> None:
-    st.title("Welcome / 欢迎")
-    st.caption(
-        "Document extraction and CCC classification workspace / "
-        "文档提取与 CCC 分类工作台"
-    )
-
-    st.subheader("What you can do / 功能")
-    capabilities = st.columns(3)
-    with capabilities[0].container(border=True, height="stretch"):
-        st.markdown("**Upload / 上传**")
-        st.write("PDF, JPG, JPEG, and PNG documents.")
-    with capabilities[1].container(border=True, height="stretch"):
-        st.markdown("**Extract / 提取**")
-        st.write("Preserve page text, tables, and key fields.")
-    with capabilities[2].container(border=True, height="stretch"):
-        st.markdown("**Classify / 分类**")
-        st.write("Authorization, CCC certification, or other.")
-
-    st.subheader("Getting started / 开始使用")
-    st.markdown(
-        "1. Select **CCC verification / CCC 核验** from the menu.\n"
-        "2. Upload one PDF or image.\n"
-        "3. Click **Start / 开始解析** to run the pipeline.\n"
-        "4. Review or download the extracted content."
-    )
-
-
 def render_upload_preview(uploaded_file: Any) -> None:
     suffix = Path(uploaded_file.name).suffix.lower()
     st.subheader("Selected document / 已选文档")

@@ -23,7 +23,3 @@ class TamperingAnalysisError(DocumentPipelineError):
 
 class InfoCheckError(DocumentPipelineError):
     """Raised when CNCA screenshot extraction or comparison cannot complete."""
-
-
-class RAGError(DocumentPipelineError):
-    """Raised when PDF indexing, retrieval, or grounded answering fails."""

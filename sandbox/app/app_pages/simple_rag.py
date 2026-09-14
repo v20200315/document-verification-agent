@@ -10,13 +10,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from sandbox.app.pipeline_service import is_api_configured
-from sandbox.app.rag_service import (
+from sandbox.app.simple_rag.backend import RAGError
+from sandbox.app.simple_rag.service import (
     KNOWLEDGE_PDF_PATH,
+    is_api_configured,
     knowledge_source_signature,
     load_cached_rag,
 )
-from sandbox.src.errors import RAGError
 
 # Chat is session-local; the expensive PDF index is shared through cache_resource.
 st.session_state.setdefault("simple_rag_messages", [])

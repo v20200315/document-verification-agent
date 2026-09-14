@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from sandbox.src.schemas import RAGAnswer, RAGSource
+from sandbox.app.simple_rag.backend import RAGAnswer, RAGSource
 
 
 class FakeRAG:
@@ -36,11 +36,11 @@ def test_simple_rag_page_initializes_and_answers(
     )
     with (
         patch(
-            "sandbox.app.rag_service.knowledge_source_signature",
+            "sandbox.app.simple_rag.service.knowledge_source_signature",
             return_value=("/tmp/source.pdf", 123, 456),
         ),
         patch(
-            "sandbox.app.rag_service.load_cached_rag",
+            "sandbox.app.simple_rag.service.load_cached_rag",
             return_value=(FakeRAG(), index),
         ) as load_mock,
     ):

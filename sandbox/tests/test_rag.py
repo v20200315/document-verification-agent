@@ -7,11 +7,14 @@ from typing import Any
 import pytest
 from langchain_core.documents import Document
 
-from sandbox.app.rag_service import knowledge_source_signature
+from sandbox.app.simple_rag.backend import (
+    RAGError,
+    RAGIndex,
+    RAGPage,
+    SimplePDFRAG,
+)
+from sandbox.app.simple_rag.service import knowledge_source_signature
 from sandbox.src.config import Settings
-from sandbox.src.errors import RAGError
-from sandbox.src.rag import RAGIndex, SimplePDFRAG
-from sandbox.src.schemas import ExtractedPage, LoadedDocument, PageInput
 
 
 class FakeEmbeddings:
@@ -35,6 +38,16 @@ class StructuredAnswerModel:
         return self.responses.pop(0)
 
 
+class VisionModel:
+    def __init__(self, content: str = "Scanned page transcription.") -> None:
+        self.content = content
+        self.calls: list[Any] = []
+
+    def invoke(self, messages: Any) -> Any:
+        self.calls.append(messages)
+        return SimpleNamespace(content=self.content)
+
+
 class FixedVectorStore:
     def __init__(self, documents: list[Document]) -> None:
         self.documents = documents
@@ -48,7 +61,7 @@ class FixedVectorStore:
 def _rag(answer_model: StructuredAnswerModel) -> SimplePDFRAG:
     return SimplePDFRAG(
         loader=SimpleNamespace(),
-        scanned_page_extractor=SimpleNamespace(),
+        vision_model=VisionModel(),
         embeddings=FakeEmbeddings(),
         answer_model=answer_model,
         max_attempts=1,
@@ -56,41 +69,20 @@ def _rag(answer_model: StructuredAnswerModel) -> SimplePDFRAG:
 
 
 def test_mixed_pdf_uses_text_layer_and_ocrs_only_scanned_pages() -> None:
-    loaded = LoadedDocument(
-        file_name="source.pdf",
-        file_type="pdf",
-        page_count=2,
-        pages=[
-            PageInput(
-                page_number=1,
-                route="text",
-                text="Digital page content.",
-            ),
-            PageInput(
-                page_number=2,
-                route="vision",
-                image_data_url="data:image/png;base64,c2Nhbg==",
-            ),
-        ],
-    )
-    extracted_documents: list[LoadedDocument] = []
-
-    class ScannedExtractor:
-        def extract(
-            self,
-            document: LoadedDocument,
-        ) -> list[ExtractedPage]:
-            extracted_documents.append(document)
-            return [
-                ExtractedPage(
-                    page_number=2,
-                    content="Scanned page transcription.",
-                )
-            ]
-
+    pages = [
+        RAGPage(
+            page_number=1,
+            text="Digital page content.",
+        ),
+        RAGPage(
+            page_number=2,
+            image_data_url="data:image/png;base64,c2Nhbg==",
+        ),
+    ]
+    vision_model = VisionModel()
     rag = SimplePDFRAG(
-        loader=SimpleNamespace(load=lambda _path: loaded),
-        scanned_page_extractor=ScannedExtractor(),
+        loader=SimpleNamespace(load=lambda _path: pages),
+        vision_model=vision_model,
         embeddings=FakeEmbeddings(),
         answer_model=StructuredAnswerModel([]),
         max_attempts=1,
@@ -101,8 +93,13 @@ def test_mixed_pdf_uses_text_layer_and_ocrs_only_scanned_pages() -> None:
     assert index.page_count == 2
     assert index.scanned_page_count == 1
     assert index.chunk_count == 2
-    assert len(extracted_documents) == 1
-    assert [page.page_number for page in extracted_documents[0].pages] == [2]
+    assert len(vision_model.calls) == 1
+    image_blocks = vision_model.calls[0][1].content
+    assert any(
+        block.get("image_url", {}).get("url") == "data:image/png;base64,c2Nhbg=="
+        for block in image_blocks
+        if isinstance(block, dict)
+    )
 
 
 def test_answer_is_grounded_in_retrieved_page() -> None:
@@ -126,7 +123,7 @@ def test_answer_is_grounded_in_retrieved_page() -> None:
     )
     vector_store = FixedVectorStore(documents)
     index = RAGIndex(
-        vector_store=vector_store,  # type: ignore[arg-type]
+        vector_store=vector_store,
         source_name="source.pdf",
         page_count=2,
         scanned_page_count=0,
@@ -161,7 +158,7 @@ def test_insufficient_context_returns_no_sources() -> None:
         ]
     )
     index = RAGIndex(
-        vector_store=FixedVectorStore(documents),  # type: ignore[arg-type]
+        vector_store=FixedVectorStore(documents),
         source_name="source.pdf",
         page_count=1,
         scanned_page_count=0,

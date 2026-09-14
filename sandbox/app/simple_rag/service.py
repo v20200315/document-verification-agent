@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-import streamlit as st
-from sandbox.src.errors import RAGError
-from sandbox.src.rag import RAGIndex, SimplePDFRAG
+from dotenv import load_dotenv
 
-SANDBOX_DIR = Path(__file__).resolve().parents[1]
+import streamlit as st
+from sandbox.app.simple_rag.backend import RAGError, RAGIndex, SimplePDFRAG
+
+SANDBOX_DIR = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = SANDBOX_DIR.parent
 KNOWLEDGE_PDF_PATH = SANDBOX_DIR / "knowledge" / "source.pdf"
+
+
+def is_api_configured() -> bool:
+    """Simple RAG owns its environment loading instead of importing CCC code."""
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+    return bool(os.getenv("DASHSCOPE_API_KEY", "").strip())
 
 
 def knowledge_source_signature(
@@ -35,7 +44,6 @@ def load_cached_rag(
     file_size: int,
 ) -> tuple[SimplePDFRAG, RAGIndex]:
     """Cache expensive embeddings and scanned-page OCR by file version."""
-    # Metadata arguments intentionally participate in Streamlit's cache key.
     del modified_time_ns, file_size
     rag = SimplePDFRAG.from_env()
     return rag, rag.build_index(Path(path_string))
