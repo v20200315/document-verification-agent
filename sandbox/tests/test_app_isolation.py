@@ -30,3 +30,17 @@ def test_dashboard_and_ccc_do_not_import_other_applications() -> None:
     assert "sandbox.app.pipeline_service" not in dashboard
     assert "sandbox.app.ui_components" not in dashboard
     assert "sandbox.app.simple_rag" not in ccc
+    assert "sandbox.app.image_pdf_to_text" not in dashboard
+    assert "sandbox.app.image_pdf_to_text" not in ccc
+
+
+def test_image_pdf_converter_does_not_import_other_applications() -> None:
+    converter_source = "\n".join(
+        path.read_text()
+        for path in (SANDBOX_DIR / "app" / "image_pdf_to_text").glob("*.py")
+    )
+
+    assert "sandbox.app.simple_rag" not in converter_source
+    assert "sandbox.app.pipeline_service" not in converter_source
+    assert "sandbox.app.ui_components" not in converter_source
+    assert "sandbox.src.schemas" not in converter_source

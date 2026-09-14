@@ -36,6 +36,12 @@ page = st.navigation(
             icon=":material/chat:",
             url_path="simple-rag",
         ),
+        st.Page(
+            "app_pages/image_pdf_to_text.py",
+            title="Image PDF to Text PDF",
+            icon=":material/document_scanner:",
+            url_path="image-pdf-to-text",
+        ),
     ],
     position="sidebar",
     expanded=True,
