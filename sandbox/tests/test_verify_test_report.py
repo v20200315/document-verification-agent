@@ -10,13 +10,17 @@ from reportlab.pdfgen.canvas import Canvas
 
 from sandbox.app.verify_test_report.backend import (
     CLASSIFICATION_FALLBACK_PREFIX,
+    DEFAULT_RULES_DIR,
     IMAGE_ONLY_MESSAGE,
+    RULE_FILES,
     ProductCategory,
     TestReportAnalyzer,
     TestReportClassifier,
     TestReportError,
     TestReportResult,
     TextReportLoader,
+    build_classification_prompt,
+    load_category_rules,
 )
 from sandbox.app.verify_test_report.service import (
     MAX_UPLOAD_BYTES,
@@ -236,6 +240,71 @@ def test_upload_service_removes_temporary_pdf() -> None:
     assert result is expected
     assert observed_paths
     assert all(not path.exists() for path in observed_paths)
+
+
+def _sample_rules() -> dict[ProductCategory, str]:
+    return {
+        ProductCategory.HEAT_FAN: "RULE_HEAT_FAN_UNIQUE",
+        ProductCategory.HEAT_PUMP_CHILLER: "RULE_CHILLER_UNIQUE",
+        ProductCategory.STORAGE_HEATER: "RULE_HEATER_UNIQUE",
+        ProductCategory.GAS_BOILER: "RULE_BOILER_UNIQUE",
+    }
+
+
+def test_default_category_rule_files_cover_every_product_except_other() -> None:
+    rules = load_category_rules()
+
+    assert set(rules) == set(RULE_FILES)
+    assert ProductCategory.OTHER not in rules
+    assert not (DEFAULT_RULES_DIR / "other.md").exists()
+    for category, file_name in RULE_FILES.items():
+        assert (DEFAULT_RULES_DIR / file_name).is_file()
+        assert category.value in rules[category]
+
+
+def test_missing_category_rule_file_is_rejected(tmp_path: Path) -> None:
+    for file_name in RULE_FILES.values():
+        (tmp_path / file_name).write_text("rule", encoding="utf-8")
+    (tmp_path / RULE_FILES[ProductCategory.GAS_BOILER]).unlink()
+
+    with pytest.raises(TestReportError, match="gas_boiler.md"):
+        load_category_rules(tmp_path)
+
+
+def test_classification_prompt_includes_loaded_rules() -> None:
+    prompt = build_classification_prompt(_sample_rules())
+
+    assert "RULE_HEAT_FAN_UNIQUE" in prompt
+    assert "RULE_CHILLER_UNIQUE" in prompt
+    assert "RULE_HEATER_UNIQUE" in prompt
+    assert "RULE_BOILER_UNIQUE" in prompt
+    assert "<category_rules>" in prompt
+    assert ProductCategory.OTHER.value in prompt
+
+
+def test_classifier_sends_loaded_rules_to_the_model() -> None:
+    structured = SequenceModel(
+        [
+            {
+                "parsed": {
+                    "product_category": ProductCategory.GAS_BOILER.value,
+                    "category_confidence": 0.7,
+                    "category_reasoning": "符合燃气壁挂炉规则。",
+                },
+                "parsing_error": None,
+            }
+        ]
+    )
+
+    TestReportClassifier(
+        StructuredFactory(structured),
+        max_attempts=1,
+        category_rules=_sample_rules(),
+    ).classify("检测报告正文")
+
+    system_message = structured.calls[0][0]
+    assert "RULE_BOILER_UNIQUE" in system_message.content
+    assert "RULE_HEAT_FAN_UNIQUE" in system_message.content
 
 
 def test_non_pdf_upload_name_is_rejected() -> None:
