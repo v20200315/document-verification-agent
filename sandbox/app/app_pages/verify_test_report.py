@@ -10,10 +10,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from sandbox.app.verify_test_report.backend import ProductCategory, TestReportError
+from sandbox.app.verify_test_report.backend import (
+    ComplianceReport,
+    ComplianceStatus,
+    ProductCategory,
+    TestReportError,
+)
 from sandbox.app.verify_test_report.service import (
     classify_uploaded_pdf,
     is_api_configured,
+    validate_classified_report,
 )
 
 CATEGORY_BADGE_COLORS = {
@@ -23,6 +29,16 @@ CATEGORY_BADGE_COLORS = {
     ProductCategory.GAS_BOILER: "red",
     ProductCategory.OTHER: "gray",
 }
+COMPLIANCE_STATUS_TEXT = {
+    ComplianceStatus.PASS: "符合",
+    ComplianceStatus.FAIL: "不符合",
+    ComplianceStatus.INSUFFICIENT: "证据不足",
+}
+COMPLIANCE_STATUS_COLOR = {
+    ComplianceStatus.PASS: "green",
+    ComplianceStatus.FAIL: "red",
+    ComplianceStatus.INSUFFICIENT: "orange",
+}
 
 # The uploader generation replaces the widget after an explicit reset.
 st.session_state.setdefault("test_report_uploader_generation", 0)
@@ -30,6 +46,13 @@ st.session_state.setdefault("test_report_uploader_generation", 0)
 st.session_state.setdefault("test_report_active_fingerprint", None)
 st.session_state.setdefault("test_report_result", None)
 st.session_state.setdefault("test_report_error", None)
+st.session_state.setdefault("test_report_compliance_report", None)
+st.session_state.setdefault("test_report_compliance_error", None)
+
+
+def clear_compliance() -> None:
+    st.session_state.test_report_compliance_report = None
+    st.session_state.test_report_compliance_error = None
 
 
 def reset_classification() -> None:
@@ -41,6 +64,33 @@ def reset_classification() -> None:
     st.session_state.test_report_active_fingerprint = None
     st.session_state.test_report_result = None
     st.session_state.test_report_error = None
+    clear_compliance()
+
+
+def render_compliance_report(report: ComplianceReport) -> None:
+    st.subheader("Compliance report / 核验报告")
+    with st.container(border=True):
+        summary_column, status_column = st.columns([3, 1])
+        with summary_column:
+            st.caption(":material/summarize: Summary / 摘要")
+            st.write(report.summary)
+        with status_column:
+            st.caption(":material/fact_check: Overall / 总体结果")
+            st.badge(
+                COMPLIANCE_STATUS_TEXT[report.overall_status],
+                color=COMPLIANCE_STATUS_COLOR[report.overall_status],
+            )
+
+    st.markdown("**Rule findings / 规则核验**")
+    for finding in report.findings:
+        with st.container(border=True):
+            heading, status = st.columns([4, 1])
+            heading.markdown(f"**{finding.rule_number}. {finding.rule_text}**")
+            status.badge(
+                COMPLIANCE_STATUS_TEXT[finding.status],
+                color=COMPLIANCE_STATUS_COLOR[finding.status],
+            )
+            st.write(finding.evidence)
 
 
 st.title("Verify Test Report")
@@ -70,6 +120,7 @@ if uploaded_file is None:
         st.session_state.test_report_active_fingerprint = None
         st.session_state.test_report_result = None
         st.session_state.test_report_error = None
+        clear_compliance()
     st.info(
         "Choose one searchable PDF. Classification starts only after you click "
         "Classify. Image-only files should first be converted on Image PDF to "
@@ -85,6 +136,7 @@ else:
         st.session_state.test_report_active_fingerprint = fingerprint
         st.session_state.test_report_result = None
         st.session_state.test_report_error = None
+        clear_compliance()
 
     with st.container(border=True):
         name_column, size_column = st.columns([3, 1])
@@ -111,6 +163,7 @@ else:
     if classify_clicked:
         st.session_state.test_report_result = None
         st.session_state.test_report_error = None
+        clear_compliance()
         try:
             with st.spinner(
                 "Extracting selectable text and classifying the product… / "
@@ -174,3 +227,38 @@ else:
                 disabled=True,
                 key=f"test_report_text_{fingerprint}",
             )
+
+        if result.product_category is not ProductCategory.OTHER:
+            validate_clicked = st.button(
+                "Validate / 开始核验",
+                type="primary",
+                icon=":material/rule:",
+                disabled=not api_ready,
+                key=f"validate_test_report_{fingerprint}",
+            )
+            if validate_clicked:
+                clear_compliance()
+                try:
+                    with st.spinner(
+                        "Checking the report against category rules… / "
+                        "正在按分类规则核验报告…",
+                        show_time=True,
+                    ):
+                        st.session_state.test_report_compliance_report = (
+                            validate_classified_report(result)
+                        )
+                except TestReportError as exc:
+                    st.session_state.test_report_compliance_error = str(exc)
+                except Exception as exc:  # noqa: BLE001
+                    st.session_state.test_report_compliance_error = (
+                        f"{exc.__class__.__name__}: {exc}"
+                    )
+
+            if st.session_state.test_report_compliance_error:
+                st.error(
+                    "Validation failed / 核验失败: "
+                    f"{st.session_state.test_report_compliance_error}"
+                )
+
+            if st.session_state.test_report_compliance_report is not None:
+                render_compliance_report(st.session_state.test_report_compliance_report)

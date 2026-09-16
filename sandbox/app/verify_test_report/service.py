@@ -11,9 +11,13 @@ from typing import Protocol
 from dotenv import load_dotenv
 
 from sandbox.app.verify_test_report.backend import (
+    ComplianceReport,
+    ProductCategory,
     TestReportAnalyzer,
     TestReportError,
     TestReportResult,
+    TestReportValidator,
+    load_category_rules,
 )
 
 SANDBOX_DIR = Path(__file__).resolve().parents[2]
@@ -24,6 +28,15 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 class AnalyzerRunner(Protocol):
     def analyze(self, pdf_path: str | Path) -> TestReportResult: ...
+
+
+class ValidatorRunner(Protocol):
+    def validate(
+        self,
+        product_category: ProductCategory,
+        full_content: str,
+        rules_markdown: str,
+    ) -> ComplianceReport: ...
 
 
 def is_api_configured() -> bool:
@@ -53,6 +66,27 @@ def classify_uploaded_pdf(
         return analyzer_factory().analyze(temporary_path)
     finally:
         shutil.rmtree(temporary_dir, ignore_errors=True)
+
+
+def validate_classified_report(
+    result: TestReportResult,
+    validator_factory: Callable[[], ValidatorRunner] = TestReportValidator.from_env,
+    rules_dir: str | Path | None = None,
+) -> ComplianceReport:
+    """Validate extracted text against the classified category's rule file."""
+    if result.product_category is ProductCategory.OTHER:
+        raise TestReportError(
+            "Validation is only available after a product category "
+            "other than Other has been classified."
+        )
+
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
+    rules = load_category_rules(rules_dir)
+    return validator_factory().validate(
+        result.product_category,
+        result.full_content,
+        rules[result.product_category],
+    )
 
 
 def _safe_pdf_name(file_name: str) -> str:

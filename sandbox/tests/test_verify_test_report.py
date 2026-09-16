@@ -13,18 +13,24 @@ from sandbox.app.verify_test_report.backend import (
     DEFAULT_RULES_DIR,
     IMAGE_ONLY_MESSAGE,
     RULE_FILES,
+    ComplianceStatus,
     ProductCategory,
+    RuleFinding,
     TestReportAnalyzer,
     TestReportClassifier,
     TestReportError,
     TestReportResult,
+    TestReportValidator,
     TextReportLoader,
+    aggregate_compliance_status,
     build_classification_prompt,
     load_category_rules,
+    parse_top_level_rules,
 )
 from sandbox.app.verify_test_report.service import (
     MAX_UPLOAD_BYTES,
     classify_uploaded_pdf,
+    validate_classified_report,
 )
 
 
@@ -318,3 +324,202 @@ def test_non_pdf_upload_name_is_rejected() -> None:
             b"not a pdf",
             analyzer_factory=UnusedAnalyzer,
         )
+
+
+TWO_RULES = """# 燃气壁挂炉
+
+1. 应具备 CCC 认证证书。
+2. 应免费保修不低于 5 年。
+"""
+
+
+def _classified_result(**overrides: Any) -> TestReportResult:
+    values: dict[str, Any] = {
+        "file_name": "report.pdf",
+        "page_count": 1,
+        "product_category": ProductCategory.GAS_BOILER,
+        "category_reasoning": "铭牌标明燃气壁挂炉。",
+        "full_content": "--- Page 1 ---\n燃气壁挂炉检测报告，具备 CCC 认证。",
+    }
+    values.update(overrides)
+    return TestReportResult(**values)
+
+
+def _finding_payloads(statuses: list[str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "rule_number": index,
+            "status": status,
+            "evidence": f"规则 {index} 的核验说明。",
+        }
+        for index, status in enumerate(statuses, start=1)
+    ]
+
+
+def test_parser_keeps_only_top_level_numbered_rules() -> None:
+    markdown = (DEFAULT_RULES_DIR / "heat_fan.md").read_text(encoding="utf-8")
+    rules = parse_top_level_rules(markdown)
+
+    assert [rule.number for rule in rules] == [1, 2, 3, 4, 5, 6, 7]
+    assert "检验报告涵盖：" in rules[2].text
+    assert "COP" not in rules[2].text
+
+
+def test_other_category_cannot_be_validated() -> None:
+    class UnusedModel:
+        def with_structured_output(self, _schema: Any, **_kwargs: Any) -> Any:
+            return self
+
+        def invoke(self, _messages: Any) -> Any:
+            raise AssertionError("Other must be rejected before the model is called")
+
+        def validate(self, *_args: Any, **_kwargs: Any) -> Any:
+            raise AssertionError("Other must be rejected before the validator runs")
+
+    with pytest.raises(TestReportError, match="Other"):
+        TestReportValidator(UnusedModel(), max_attempts=1).validate(
+            ProductCategory.OTHER,
+            "unrelated",
+            TWO_RULES,
+        )
+    with pytest.raises(TestReportError, match="Other"):
+        validate_classified_report(
+            _classified_result(
+                product_category=ProductCategory.OTHER,
+                category_reasoning="无法归入四类产品。",
+            ),
+            validator_factory=UnusedModel,
+        )
+
+
+def test_validator_sends_only_classified_category_rules(tmp_path: Path) -> None:
+    for category, file_name in RULE_FILES.items():
+        (tmp_path / file_name).write_text(
+            f"# {category.value}\n\n1. Unique {file_name} requirement.\n",
+            encoding="utf-8",
+        )
+    structured = SequenceModel(
+        [
+            {
+                "parsed": {
+                    "summary": "仅核验燃气壁挂炉规则。",
+                    "findings": _finding_payloads(["Pass"]),
+                },
+                "parsing_error": None,
+            }
+        ]
+    )
+
+    report = validate_classified_report(
+        _classified_result(),
+        validator_factory=lambda: TestReportValidator(
+            StructuredFactory(structured),
+            max_attempts=1,
+        ),
+        rules_dir=tmp_path,
+    )
+
+    user_message = structured.calls[0][1].content
+    assert report.product_category is ProductCategory.GAS_BOILER
+    assert "Unique gas_boiler.md requirement." in user_message
+    assert "Unique heat_fan.md requirement." not in user_message
+    assert "低环境温度空气源热泵热风机" not in user_message
+
+
+@pytest.mark.parametrize(
+    ("statuses", "expected"),
+    [
+        (["Pass", "Pass"], ComplianceStatus.PASS),
+        (["Pass", "Insufficient evidence"], ComplianceStatus.INSUFFICIENT),
+        (["Fail", "Insufficient evidence"], ComplianceStatus.FAIL),
+        (["Pass", "Fail"], ComplianceStatus.FAIL),
+    ],
+)
+def test_overall_status_aggregates_findings(
+    statuses: list[str],
+    expected: ComplianceStatus,
+) -> None:
+    findings = [
+        RuleFinding(
+            rule_number=index,
+            rule_text=f"规则 {index}",
+            status=ComplianceStatus(status),
+            evidence="说明",
+        )
+        for index, status in enumerate(statuses, start=1)
+    ]
+    assert aggregate_compliance_status(findings) is expected
+
+    structured = SequenceModel(
+        [
+            {
+                "parsed": {
+                    "summary": "按规则汇总。",
+                    "findings": _finding_payloads(statuses),
+                },
+                "parsing_error": None,
+            }
+        ]
+    )
+    report = TestReportValidator(
+        StructuredFactory(structured),
+        max_attempts=1,
+    ).validate(ProductCategory.GAS_BOILER, "报告正文", TWO_RULES)
+    assert report.overall_status is expected
+    assert [finding.rule_text for finding in report.findings] == [
+        "应具备 CCC 认证证书。",
+        "应免费保修不低于 5 年。",
+    ]
+
+
+def test_validator_retries_wrong_finding_count_then_errors() -> None:
+    structured = SequenceModel(
+        [
+            {
+                "parsed": {
+                    "summary": "缺项。",
+                    "findings": _finding_payloads(["Pass"]),
+                },
+                "parsing_error": None,
+            },
+            {
+                "parsed": {
+                    "summary": "两项均已核验。",
+                    "findings": _finding_payloads(["Pass", "Pass"]),
+                },
+                "parsing_error": None,
+            },
+        ]
+    )
+
+    report = TestReportValidator(
+        StructuredFactory(structured),
+        max_attempts=2,
+    ).validate(ProductCategory.GAS_BOILER, "报告正文", TWO_RULES)
+
+    assert report.overall_status is ComplianceStatus.PASS
+    assert len(structured.calls) == 2
+
+    failing = SequenceModel(
+        [
+            {
+                "parsed": {
+                    "summary": "缺项。",
+                    "findings": _finding_payloads(["Pass"]),
+                },
+                "parsing_error": None,
+            },
+            {
+                "parsed": {
+                    "summary": "仍然缺项。",
+                    "findings": _finding_payloads(["Pass"]),
+                },
+                "parsing_error": None,
+            },
+        ]
+    )
+    with pytest.raises(TestReportError, match="unavailable after retries"):
+        TestReportValidator(
+            StructuredFactory(failing),
+            max_attempts=2,
+        ).validate(ProductCategory.GAS_BOILER, "报告正文", TWO_RULES)
