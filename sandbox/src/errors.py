@@ -23,3 +23,7 @@ class TamperingAnalysisError(DocumentPipelineError):
 
 class InfoCheckError(DocumentPipelineError):
     """Raised when CNCA screenshot extraction or comparison cannot complete."""
+
+
+class CqcWebFetchError(DocumentPipelineError):
+    """Raised when a CQC certificate page cannot be fetched or parsed."""

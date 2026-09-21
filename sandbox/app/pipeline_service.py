@@ -11,6 +11,7 @@ from typing import Protocol
 
 from dotenv import load_dotenv
 
+from sandbox.src.cqc_web import fetch_cqc_certificate_from_qr
 from sandbox.src.errors import DocumentLoadError, DocumentPipelineError
 from sandbox.src.info_checker import MAX_EVIDENCE_IMAGES, CNCAInfoChecker
 from sandbox.src.pipeline import DocumentPipeline
@@ -72,30 +73,55 @@ def process_uploaded_document(
     temporary_dir = Path(tempfile.mkdtemp(prefix="document-", dir=UPLOAD_TEMP_ROOT))
     temporary_path = temporary_dir / safe_name
     qr_payloads: list[str] = []
+    field_extractor = None
+    processing_error: str | None = None
+    document: DocumentResult | None = None
+    certificate: CccCertificateFields | None = None
 
     try:
         temporary_path.write_bytes(data)
         qr_payloads = decode_document_qr(temporary_path)
-        pipeline = pipeline_factory()
-        document = pipeline.run(temporary_path)
-        certificate = pipeline.extract_certificate_fields(document.full_content)
+        try:
+            pipeline = pipeline_factory()
+            field_extractor = getattr(pipeline, "field_extractor", None)
+            document = pipeline.run(temporary_path)
+            certificate = pipeline.extract_certificate_fields(document.full_content)
+        except DocumentPipelineError as exc:
+            processing_error = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            processing_error = f"{exc.__class__.__name__}: {exc}"
+
+        if processing_error is None:
+            cqc_certificate, cqc_fetch_error = fetch_cqc_certificate_from_qr(
+                qr_payloads,
+                field_extractor,
+            )
+            return ProcessedDocument(
+                file_md5=file_md5,
+                qr_payloads=qr_payloads,
+                certificate=certificate,
+                cqc_certificate=cqc_certificate,
+                cqc_fetch_error=cqc_fetch_error,
+                document=document,
+            )
+
+        if field_extractor is None and qr_payloads:
+            try:
+                field_extractor = getattr(pipeline_factory(), "field_extractor", None)
+            except Exception:  # noqa: BLE001
+                field_extractor = None
+        cqc_certificate, cqc_fetch_error = fetch_cqc_certificate_from_qr(
+            qr_payloads,
+            field_extractor,
+        )
         return ProcessedDocument(
             file_md5=file_md5,
             qr_payloads=qr_payloads,
             certificate=certificate,
+            cqc_certificate=cqc_certificate,
+            cqc_fetch_error=cqc_fetch_error,
             document=document,
-        )
-    except DocumentPipelineError as exc:
-        return ProcessedDocument(
-            file_md5=file_md5,
-            qr_payloads=qr_payloads,
-            processing_error=str(exc),
-        )
-    except Exception as exc:  # noqa: BLE001
-        return ProcessedDocument(
-            file_md5=file_md5,
-            qr_payloads=qr_payloads,
-            processing_error=f"{exc.__class__.__name__}: {exc}",
+            processing_error=processing_error,
         )
     finally:
         # Failed LLM calls must not leave user documents on the server.

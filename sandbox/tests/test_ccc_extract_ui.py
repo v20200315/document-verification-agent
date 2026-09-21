@@ -44,6 +44,11 @@ def _processed_document() -> ProcessedDocument:
             issue_date="2024 年 07 月 19 日",
             valid_until="2029 年 07 月 18 日",
         ),
+        cqc_certificate=CccCertificateFields(
+            certificate_number="2025010703748148",
+            certificate_status="有效",
+            product_name="低环境温度变频式空气源热泵（冷水）机组",
+        ),
         document=DocumentResult(
             file_name="certificate.jpg",
             file_type="image",
@@ -82,9 +87,14 @@ def test_start_shows_json_qr_and_md5_sections(monkeypatch: pytest.MonkeyPatch) -
         assert any("Certificate JSON" in value for value in markdown_values)
         assert any("CQC QR URL" in value for value in markdown_values)
         assert any("File MD5" in value for value in markdown_values)
+        assert any("CQC website JSON" in value for value in markdown_values)
         json_payloads = [json.loads(item.value) for item in app.json]
         assert any(
             payload.get("product_name") == "低环境温度变频式空气源热泵（冷水）机组"
+            for payload in json_payloads
+        )
+        assert any(
+            payload.get("certificate_number") == "2025010703748148"
             for payload in json_payloads
         )
         assert any(code.value == MD5_DIGEST for code in app.code)

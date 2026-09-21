@@ -60,8 +60,33 @@ def render_processed_document(processed: ProcessedDocument) -> None:
         st.markdown("**:material/fingerprint: File MD5 / 文件 MD5**")
         st.code(processed.file_md5, language=None)
 
+    with st.container(border=True):
+        st.markdown("**:material/language: CQC website JSON / 官网 JSON**")
+        if not _has_cqc_url(processed.qr_payloads):
+            st.info(
+                "No CQC website URL was found in the QR code. / "
+                "二维码中未识别到 CQC 官网链接。"
+            )
+        elif processed.cqc_fetch_error:
+            st.warning(
+                f"CQC website fetch failed / 官网抓取失败: {processed.cqc_fetch_error}",
+                icon=":material/warning:",
+            )
+        cqc_certificate = processed.cqc_certificate or CccCertificateFields()
+        st.json(cqc_certificate.model_dump())
+
 
 def _is_http_url(payload: str) -> bool:
     lowered = payload.strip().lower()
     return lowered.startswith(("http://", "https://"))
+
+
+def _has_cqc_url(qr_payloads: list[str]) -> bool:
+    for payload in qr_payloads:
+        lowered = payload.strip().lower()
+        if _is_http_url(payload) and (
+            "cqc.com.cn" in lowered or "cqccms.com.cn" in lowered
+        ):
+            return True
+    return False
 

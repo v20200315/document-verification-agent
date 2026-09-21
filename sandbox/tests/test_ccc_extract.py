@@ -4,7 +4,9 @@ import hashlib
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
+import httpx
 import pytest
 import zxingcpp
 from PIL import Image
@@ -13,7 +15,13 @@ from reportlab.pdfgen import canvas
 
 from sandbox.app.pipeline_service import process_uploaded_document
 from sandbox.src.certificate_fields import CertificateFieldExtractor
-from sandbox.src.errors import DocumentLoadError, ExtractionError
+from sandbox.src.cqc_web import (
+    fetch_cqc_certificate_from_qr,
+    fetch_page_text,
+    html_to_text,
+    select_cqc_url,
+)
+from sandbox.src.errors import CqcWebFetchError, DocumentLoadError, ExtractionError
 from sandbox.src.qr import decode_document_qr
 from sandbox.src.schemas import (
     CccCertificateFields,
@@ -38,6 +46,17 @@ CHINA QUALITY CERTIFICATION CENTRE
 http://www.cqc.com.cn"""
 
 CQC_URL = "https://www.cqc.com.cn/www/english/"
+CQC_DETAIL_URL = "https://webdata.cqccms.com.cn/webdata/query/CCCCerti.do?certno=1"
+
+SAMPLE_CQC_HTML = """<html><body><table>
+<tr><td>证书编号 Certificate No.</td><td>2025010703748148</td></tr>
+<tr><td>证书状态</td><td>有效</td></tr>
+<tr><td>制造商 Manufacturer</td><td>浙江德富新能源技术有限公司</td></tr>
+<tr><td>产品名称 Product Name</td><td>低环境温度变频式空气源热泵（冷水）机组</td></tr>
+<tr><td>产品型号 Product Type</td><td>DF-CTS064 I /04 220V～ 50Hz R410A</td></tr>
+<tr><td>发证日期</td><td>2024 年 07 月 19 日</td></tr>
+<tr><td>有效期至</td><td>2029 年 07 月 18 日</td></tr>
+</table></body></html>"""
 
 
 class SequenceModel:
@@ -63,10 +82,32 @@ class StructuredFactory:
         return self.structured_model
 
 
+class FakeFieldExtractor:
+    def __init__(self, web_fields: CccCertificateFields | None = None) -> None:
+        self.web_fields = web_fields or CccCertificateFields(
+            certificate_number="2025010703748148",
+            certificate_status="有效",
+            manufacturer="浙江德富新能源技术有限公司",
+            product_name="低环境温度变频式空气源热泵（冷水）机组",
+            models_and_specifications="DF-CTS064 I /04 220V～ 50Hz R410A",
+            issue_date="2024 年 07 月 19 日",
+            valid_until="2029 年 07 月 18 日",
+        )
+
+    def extract_from_web(self, _page_text: str) -> CccCertificateFields:
+        return self.web_fields
+
+
 class FakePipeline:
-    def __init__(self, document: DocumentResult, fields: CccCertificateFields) -> None:
+    def __init__(
+        self,
+        document: DocumentResult,
+        fields: CccCertificateFields,
+        field_extractor: FakeFieldExtractor | None = None,
+    ) -> None:
         self.document = document
         self.fields = fields
+        self.field_extractor = field_extractor or FakeFieldExtractor()
 
     def run(self, _path: Path) -> DocumentResult:
         return self.document
@@ -242,6 +283,142 @@ def test_decode_no_qr_image(tmp_path: Path) -> None:
     image_path.write_bytes(_blank_png_bytes())
 
     assert decode_document_qr(image_path) == []
+
+
+def test_select_cqc_url_prefers_cqc_host() -> None:
+    assert select_cqc_url(
+        ["https://example.com/other", CQC_DETAIL_URL, CQC_URL]
+    ) == CQC_DETAIL_URL
+
+
+def test_html_to_text_strips_tags() -> None:
+    text = html_to_text(SAMPLE_CQC_HTML)
+
+    assert "2025010703748148" in text
+    assert "<td>" not in text
+    assert "浙江德富新能源技术有限公司" in text
+
+
+def test_fetch_page_text_blocks_non_cqc_host() -> None:
+    with pytest.raises(CqcWebFetchError, match="Blocked non-CQC URL"):
+        fetch_page_text("https://example.com/certificate")
+
+
+def test_fetch_page_text_returns_visible_text() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == CQC_DETAIL_URL
+        return httpx.Response(200, text=SAMPLE_CQC_HTML)
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as client:
+        text = fetch_page_text(CQC_DETAIL_URL, client=client)
+
+    assert "2025010703748148" in text
+
+
+def test_certificate_extractor_parses_web_structured_json() -> None:
+    structured = SequenceModel(
+        [
+            {
+                "parsed": {
+                    "certificate_number": "2025010703748148",
+                    "certificate_status": "有效",
+                    "certificate_holder": None,
+                    "manufacturer": "浙江德富新能源技术有限公司",
+                    "production_factory": None,
+                    "product_name": "低环境温度变频式空气源热泵（冷水）机组",
+                    "models_and_specifications": "DF-CTS064 I /04 220V～ 50Hz R410A",
+                    "applicable_standards": None,
+                    "issuing_certification_body": "中国质量认证中心",
+                    "issue_date": "2024 年 07 月 19 日",
+                    "valid_until": "2029 年 07 月 18 日",
+                },
+                "parsing_error": None,
+            }
+        ]
+    )
+
+    fields = CertificateFieldExtractor(
+        StructuredFactory(structured), max_attempts=1
+    ).extract_from_web(html_to_text(SAMPLE_CQC_HTML))
+
+    assert fields.certificate_number == "2025010703748148"
+    assert fields.certificate_status == "有效"
+
+
+def test_fetch_cqc_certificate_from_qr_populates_json() -> None:
+    with patch(
+        "sandbox.src.cqc_web.fetch_page_text",
+        return_value=html_to_text(SAMPLE_CQC_HTML),
+    ):
+        certificate, error = fetch_cqc_certificate_from_qr(
+            [CQC_DETAIL_URL],
+            FakeFieldExtractor(),
+        )
+
+    assert error is None
+    assert certificate is not None
+    assert certificate.certificate_number == "2025010703748148"
+
+
+def test_fetch_cqc_certificate_from_qr_without_url() -> None:
+    certificate, error = fetch_cqc_certificate_from_qr([], FakeFieldExtractor())
+
+    assert certificate is None
+    assert error is None
+
+
+def test_process_uploaded_document_includes_cqc_json() -> None:
+    data = _qr_png_bytes(CQC_DETAIL_URL)
+    document = DocumentResult(
+        file_name="upload.png",
+        file_type="image",
+        doc_category=DocumentCategory.CCC_CERTIFICATION,
+        full_content="certificate text",
+    )
+    fields = CccCertificateFields(product_name="heat pump")
+
+    with patch(
+        "sandbox.src.cqc_web.fetch_page_text",
+        return_value=html_to_text(SAMPLE_CQC_HTML),
+    ):
+        processed = process_uploaded_document(
+            "upload.png",
+            data,
+            pipeline_factory=lambda: FakePipeline(document, fields),
+        )
+
+    assert processed.cqc_fetch_error is None
+    assert processed.cqc_certificate is not None
+    assert processed.cqc_certificate.certificate_number == "2025010703748148"
+
+
+def test_cqc_fetch_failure_preserves_other_results() -> None:
+    data = _qr_png_bytes(CQC_DETAIL_URL)
+    document = DocumentResult(
+        file_name="upload.png",
+        file_type="image",
+        doc_category=DocumentCategory.CCC_CERTIFICATION,
+        full_content="certificate text",
+    )
+    fields = CccCertificateFields(product_name="heat pump")
+
+    with patch(
+        "sandbox.src.cqc_web.fetch_page_text",
+        side_effect=CqcWebFetchError("Unable to fetch CQC page"),
+    ):
+        processed = process_uploaded_document(
+            "upload.png",
+            data,
+            pipeline_factory=lambda: FakePipeline(document, fields),
+        )
+
+    assert processed.certificate == fields
+    assert processed.file_md5
+    assert processed.qr_payloads[0] == CQC_DETAIL_URL
+    assert processed.cqc_certificate is None
+    assert processed.cqc_fetch_error is not None
+    assert "Unable to fetch CQC page" in processed.cqc_fetch_error
 
 
 def test_decode_qr_in_pdf(tmp_path: Path) -> None:
