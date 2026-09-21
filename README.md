@@ -144,6 +144,20 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Open API docs at `http://localhost:8000/docs`.
 
+**Sandbox Streamlit** (CCC, Simple RAG, Image PDF to Text, Verify Test Report):
+
+```bash
+uv run streamlit run sandbox/app/streamlit_app.py
+```
+
+**Docker**: put `DASHSCOPE_API_KEY` in the project-root `.env`. Compose injects it at runtime; the image does not copy `.env`.
+
+```bash
+docker compose up --build
+```
+
+Open `http://localhost:8501`.
+
 **Streamlit test page**:
 
 ```bash
@@ -310,6 +324,20 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 接口文档：`http://localhost:8000/docs`。
+
+**Sandbox Streamlit**（CCC、Simple RAG、图片 PDF 转文本、检测报告核验）：
+
+```bash
+uv run streamlit run sandbox/app/streamlit_app.py
+```
+
+**Docker**：在项目根目录 `.env` 中设置 `DASHSCOPE_API_KEY`。Compose 会在运行时注入该变量，镜像不会复制 `.env`。
+
+```bash
+docker compose up --build
+```
+
+打开 `http://localhost:8501`。
 
 **Streamlit 测试页**：
 
