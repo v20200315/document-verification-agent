@@ -90,8 +90,13 @@ def test_start_shows_json_qr_and_md5_sections(monkeypatch: pytest.MonkeyPatch) -
         assert any(code.value == MD5_DIGEST for code in app.code)
         link_labels = [button.label for button in app.get("link_button")]
         assert CQC_URL in link_labels
-        assert any(
+        assert not any(
             button.label.startswith("Analyze tampering") for button in app.button
+        )
+        assert not any(button.label.startswith("Check info") for button in app.button)
+        assert not any(
+            heading.value == "Authenticity checks / 真伪核验检查"
+            for heading in app.subheader
         )
 
 
