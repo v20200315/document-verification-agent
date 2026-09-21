@@ -15,6 +15,8 @@ def test_simple_rag_does_not_import_ccc_application_code() -> None:
         "sandbox.src.info_checker",
         "sandbox.src.loaders",
         "sandbox.src.pipeline",
+        "sandbox.src.qr",
+        "sandbox.src.certificate_fields",
         "sandbox.src.schemas",
         "sandbox.src.tampering",
     )
@@ -68,6 +70,8 @@ def test_verify_test_report_does_not_import_other_applications() -> None:
         "sandbox.src.info_checker",
         "sandbox.src.loaders",
         "sandbox.src.pipeline",
+        "sandbox.src.qr",
+        "sandbox.src.certificate_fields",
         "sandbox.src.schemas",
         "sandbox.src.tampering",
         "DocumentCategory",

@@ -19,7 +19,7 @@ from sandbox.app.pipeline_service import (
 from sandbox.app.ui_components import (
     render_certificate_number,
     render_info_comparison_report,
-    render_result,
+    render_processed_document,
     render_tampering_report,
     render_upload_preview,
 )
@@ -30,7 +30,7 @@ st.session_state.setdefault("document_uploader_generation", 0)
 # The fingerprint invalidates stale output when the selected file changes.
 st.session_state.setdefault("active_upload_fingerprint", None)
 # Result and error persist while navigating, but reset for each new document.
-st.session_state.setdefault("latest_document_result", None)
+st.session_state.setdefault("latest_processed_document", None)
 st.session_state.setdefault("latest_processing_error", None)
 # Tampering is an optional second call tied to the active upload fingerprint.
 st.session_state.setdefault("latest_tampering_report", None)
@@ -56,7 +56,7 @@ def reset_document() -> None:
     st.session_state.pop(current_key, None)
     st.session_state.document_uploader_generation += 1
     st.session_state.active_upload_fingerprint = None
-    st.session_state.latest_document_result = None
+    st.session_state.latest_processed_document = None
     st.session_state.latest_processing_error = None
     st.session_state.latest_tampering_report = None
     st.session_state.latest_tampering_error = None
@@ -89,7 +89,7 @@ uploaded_file = st.file_uploader(
 if uploaded_file is None:
     if st.session_state.active_upload_fingerprint is not None:
         st.session_state.active_upload_fingerprint = None
-        st.session_state.latest_document_result = None
+        st.session_state.latest_processed_document = None
         st.session_state.latest_processing_error = None
         st.session_state.latest_tampering_report = None
         st.session_state.latest_tampering_error = None
@@ -106,7 +106,7 @@ else:
 
     if upload_fingerprint != st.session_state.active_upload_fingerprint:
         st.session_state.active_upload_fingerprint = upload_fingerprint
-        st.session_state.latest_document_result = None
+        st.session_state.latest_processed_document = None
         st.session_state.latest_processing_error = None
         st.session_state.latest_tampering_report = None
         st.session_state.latest_tampering_error = None
@@ -130,7 +130,7 @@ else:
         )
 
     if start_clicked:
-        st.session_state.latest_document_result = None
+        st.session_state.latest_processed_document = None
         st.session_state.latest_processing_error = None
         st.session_state.latest_tampering_report = None
         st.session_state.latest_tampering_error = None
@@ -140,9 +140,11 @@ else:
                 "Extracting and classifying… / 正在提取并分类…",
                 show_time=True,
             ):
-                st.session_state.latest_document_result = process_uploaded_document(
-                    uploaded_file.name,
-                    uploaded_bytes,
+                st.session_state.latest_processed_document = (
+                    process_uploaded_document(
+                        uploaded_file.name,
+                        uploaded_bytes,
+                    )
                 )
         except DocumentPipelineError as exc:
             st.session_state.latest_processing_error = str(exc)
@@ -156,8 +158,11 @@ else:
             f"Processing failed / 处理失败: {st.session_state.latest_processing_error}"
         )
 
-    if st.session_state.latest_document_result is not None:
-        render_result(st.session_state.latest_document_result)
+    processed = st.session_state.latest_processed_document
+    if processed is not None:
+        render_processed_document(processed)
+
+    if processed is not None and processed.document is not None:
         st.subheader("Authenticity checks / 真伪核验检查")
         st.caption(
             "Visual tampering analysis is one independent checkpoint; "
@@ -212,7 +217,7 @@ else:
 
             if st.session_state.show_info_check:
                 st.subheader("上传 CNCA 查询结果截图")
-                render_certificate_number(st.session_state.latest_document_result)
+                render_certificate_number(processed.document)
                 st.caption(
                     "可上传 1–10 张 JPG 或 PNG 截图；系统不会在上传后自动调用模型。"
                 )
@@ -279,7 +284,7 @@ else:
                         ):
                             st.session_state.latest_info_check_report = (
                                 check_uploaded_information(
-                                    st.session_state.latest_document_result,
+                                    processed.document,
                                     evidence_uploads,
                                 )
                             )

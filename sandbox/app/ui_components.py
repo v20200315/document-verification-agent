@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
 from sandbox.src.info_checker import extract_certificate_number
 from sandbox.src.schemas import (
+    CccCertificateFields,
     DocumentResult,
     InfoComparisonReport,
+    ProcessedDocument,
     TamperingReport,
 )
 
@@ -33,57 +34,43 @@ def render_upload_preview(uploaded_file: Any) -> None:
             )
 
 
-def render_result(result: DocumentResult) -> None:
+def render_processed_document(processed: ProcessedDocument) -> None:
     st.subheader("Extraction result / 解析结果")
-    category = str(result.doc_category)
-    category_color = {
-        "Authorization Document": "blue",
-        "CCC Certification Document": "green",
-        "Other": "gray",
-    }.get(category, "gray")
 
     with st.container(border=True):
-        st.caption("DOCUMENT METADATA / 文件元数据")
-        name_column, type_column, category_column = st.columns([2, 1, 2])
-        with name_column:
-            st.caption(":material/description: File name / 文件名")
-            st.markdown(f"**{result.file_name}**")
-        with type_column:
-            st.caption(":material/draft: File type / 文件类型")
-            st.badge(result.file_type.upper(), color="gray")
-        with category_column:
-            st.caption(":material/category: Category / 文档类别")
-            st.badge(
-                category,
-                icon=":material/verified:",
-                color=category_color,
+        st.markdown("**:material/data_object: Certificate JSON / 证书 JSON**")
+        if processed.processing_error:
+            st.warning(
+                f"Extraction failed / 解析失败: {processed.processing_error}",
+                icon=":material/warning:",
             )
+        certificate = processed.certificate or CccCertificateFields()
+        st.json(certificate.model_dump())
 
-    if result.category_reasoning:
-        with st.container(border=True):
-            st.markdown("**:material/fact_check: Classification reasoning / 分类依据**")
-            st.write(result.category_reasoning)
+    with st.container(border=True):
+        st.markdown("**:material/qr_code: CQC QR URL / 二维码链接**")
+        if not processed.qr_payloads:
+            st.info("No QR code was found. / 未识别到二维码。")
+        else:
+            for index, payload in enumerate(processed.qr_payloads):
+                if _is_http_url(payload):
+                    st.link_button(
+                        payload,
+                        payload,
+                        icon=":material/open_in_new:",
+                        key=f"cqc_qr_{processed.file_md5}_{index}",
+                    )
+                else:
+                    st.code(payload, language=None)
 
-    content_key = hashlib.sha256(result.full_content.encode("utf-8")).hexdigest()[:12]
-    with st.expander("Full content / 完整内容", expanded=False):
-        st.caption(
-            "The fixed-height viewer scrolls vertically. / 固定高度区域支持垂直滚动。"
-        )
-        st.text_area(
-            "Extracted text / 提取文本",
-            value=result.full_content,
-            height=420,
-            disabled=True,
-            key=f"full_content_{content_key}",
-        )
-        st.download_button(
-            "Download text / 下载文本",
-            data=result.full_content.encode("utf-8"),
-            file_name=f"{Path(result.file_name).stem}_extracted.txt",
-            mime="text/plain",
-            icon=":material/download:",
-            key=f"download_{content_key}",
-        )
+    with st.container(border=True):
+        st.markdown("**:material/fingerprint: File MD5 / 文件 MD5**")
+        st.code(processed.file_md5, language=None)
+
+
+def _is_http_url(payload: str) -> bool:
+    lowered = payload.strip().lower()
+    return lowered.startswith(("http://", "https://"))
 
 
 def render_tampering_report(report: TamperingReport) -> None:

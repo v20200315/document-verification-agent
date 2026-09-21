@@ -11,6 +11,7 @@ from streamlit.testing.v1 import AppTest
 from sandbox.src.schemas import (
     DocumentCategory,
     DocumentResult,
+    ProcessedDocument,
     TamperingReport,
     TamperingRisk,
     TamperingStatus,
@@ -33,6 +34,10 @@ def test_tampering_checkpoint_requires_explicit_click(
         doc_category=DocumentCategory.CCC_CERTIFICATION,
         full_content="Certificate content",
     )
+    processed = ProcessedDocument(
+        file_md5="0123456789abcdef0123456789abcdef",
+        document=document_result,
+    )
     tampering_report = TamperingReport(
         status=TamperingStatus.NO_OBVIOUS_INDICATORS,
         risk_level=TamperingRisk.LOW,
@@ -45,7 +50,7 @@ def test_tampering_checkpoint_requires_explicit_click(
     with (
         patch(
             "sandbox.app.pipeline_service.process_uploaded_document",
-            return_value=document_result,
+            return_value=processed,
         ) as process_mock,
         patch(
             "sandbox.app.pipeline_service.analyze_uploaded_document",

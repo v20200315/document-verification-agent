@@ -53,6 +53,32 @@ class DocumentResult(BaseModel):
     page_count: int | None = Field(default=None, ge=1)
 
 
+class CccCertificateFields(BaseModel):
+    """Structured CCC certificate fields extracted from transcribed text."""
+
+    certificate_number: str | None = None
+    certificate_status: str | None = None
+    certificate_holder: str | None = None
+    manufacturer: str | None = None
+    production_factory: str | None = None
+    product_name: str | None = None
+    models_and_specifications: str | None = None
+    applicable_standards: str | None = None
+    issuing_certification_body: str | None = None
+    issue_date: str | None = None
+    valid_until: str | None = None
+
+
+class ProcessedDocument(BaseModel):
+    """Start-button payload: JSON fields, QR payloads, MD5, and optional extract."""
+
+    file_md5: str = Field(min_length=32, max_length=32)
+    qr_payloads: list[str] = Field(default_factory=list)
+    certificate: CccCertificateFields | None = None
+    document: DocumentResult | None = None
+    processing_error: str | None = None
+
+
 class TamperingSeverity(StrEnum):
     LOW = "Low"
     MEDIUM = "Medium"

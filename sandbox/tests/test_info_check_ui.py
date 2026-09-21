@@ -16,6 +16,7 @@ from sandbox.src.schemas import (
     InfoComparisonItem,
     InfoComparisonOutcome,
     InfoComparisonReport,
+    ProcessedDocument,
     TamperingReport,
     TamperingRisk,
     TamperingStatus,
@@ -37,6 +38,10 @@ def test_info_check_requires_evidence_and_explicit_analysis(
         file_type="image",
         doc_category=DocumentCategory.CCC_CERTIFICATION,
         full_content="证书编号：2025010703748148",
+    )
+    processed = ProcessedDocument(
+        file_md5="0123456789abcdef0123456789abcdef",
+        document=document_result,
     )
     comparison_report = InfoComparisonReport(
         status=InfoCheckStatus.ALL_MATCHED,
@@ -65,7 +70,7 @@ def test_info_check_requires_evidence_and_explicit_analysis(
     with (
         patch(
             "sandbox.app.pipeline_service.process_uploaded_document",
-            return_value=document_result,
+            return_value=processed,
         ),
         patch(
             "sandbox.app.pipeline_service.analyze_uploaded_document",

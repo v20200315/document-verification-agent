@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from sandbox.src.certificate_fields import CertificateFieldExtractor
 from sandbox.src.classifier import DocumentClassifier
 from sandbox.src.config import Settings
 from sandbox.src.extractor import ContentExtractor, merge_pages
 from sandbox.src.llm import build_models
 from sandbox.src.loaders import DocumentLoader
-from sandbox.src.schemas import DocumentResult
+from sandbox.src.schemas import CccCertificateFields, DocumentResult
 
 
 class DocumentPipeline:
@@ -18,10 +19,12 @@ class DocumentPipeline:
         loader: DocumentLoader,
         extractor: ContentExtractor,
         classifier: DocumentClassifier,
+        field_extractor: CertificateFieldExtractor | None = None,
     ) -> None:
         self.loader = loader
         self.extractor = extractor
         self.classifier = classifier
+        self.field_extractor = field_extractor
 
     @classmethod
     def from_settings(cls, settings: Settings) -> DocumentPipeline:
@@ -37,6 +40,10 @@ class DocumentPipeline:
                 max_attempts=settings.max_retries,
             ),
             classifier=DocumentClassifier(
+                model=text_model,
+                max_attempts=settings.max_retries,
+            ),
+            field_extractor=CertificateFieldExtractor(
                 model=text_model,
                 max_attempts=settings.max_retries,
             ),
@@ -61,3 +68,8 @@ class DocumentPipeline:
             full_content=full_content,
             page_count=document.page_count,
         )
+
+    def extract_certificate_fields(self, full_content: str) -> CccCertificateFields:
+        if self.field_extractor is None:
+            return CccCertificateFields()
+        return self.field_extractor.extract(full_content)
