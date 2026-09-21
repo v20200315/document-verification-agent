@@ -11,6 +11,7 @@ from typing import Protocol
 
 from dotenv import load_dotenv
 
+from sandbox.src.certificate_comparison import compare_certificate_sources
 from sandbox.src.cqc_web import fetch_cqc_certificate_from_qr
 from sandbox.src.errors import DocumentLoadError, DocumentPipelineError
 from sandbox.src.info_checker import MAX_EVIDENCE_IMAGES, CNCAInfoChecker
@@ -94,6 +95,12 @@ def process_uploaded_document(
         cqc_page_fields, cqc_certificate, cqc_fetch_error, cqc_source_url = (
             fetch_cqc_certificate_from_qr(qr_payloads, field_extractor)
         )
+        cqc_comparison_report = compare_certificate_sources(
+            image_certificate=certificate,
+            website_certificate=cqc_certificate,
+            website_source_url=cqc_source_url,
+            website_fetch_error=cqc_fetch_error,
+        )
         if processing_error is None:
             return ProcessedDocument(
                 file_md5=file_md5,
@@ -103,6 +110,7 @@ def process_uploaded_document(
                 cqc_certificate=cqc_certificate,
                 cqc_source_url=cqc_source_url,
                 cqc_fetch_error=cqc_fetch_error,
+                cqc_comparison_report=cqc_comparison_report,
                 document=document,
             )
 
@@ -114,6 +122,12 @@ def process_uploaded_document(
             cqc_page_fields, cqc_certificate, cqc_fetch_error, cqc_source_url = (
                 fetch_cqc_certificate_from_qr(qr_payloads, field_extractor)
             )
+            cqc_comparison_report = compare_certificate_sources(
+                image_certificate=certificate,
+                website_certificate=cqc_certificate,
+                website_source_url=cqc_source_url,
+                website_fetch_error=cqc_fetch_error,
+            )
         return ProcessedDocument(
             file_md5=file_md5,
             qr_payloads=qr_payloads,
@@ -122,6 +136,7 @@ def process_uploaded_document(
             cqc_certificate=cqc_certificate,
             cqc_source_url=cqc_source_url,
             cqc_fetch_error=cqc_fetch_error,
+            cqc_comparison_report=cqc_comparison_report,
             document=document,
             processing_error=processing_error,
         )

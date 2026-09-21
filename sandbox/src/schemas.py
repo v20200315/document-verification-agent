@@ -79,6 +79,7 @@ class ProcessedDocument(BaseModel):
     cqc_certificate: CccCertificateFields | None = None
     cqc_source_url: str | None = None
     cqc_fetch_error: str | None = None
+    cqc_comparison_report: CqcWebComparisonReport | None = None
     document: DocumentResult | None = None
     processing_error: str | None = None
 
@@ -195,3 +196,33 @@ class InfoComparisonReport(BaseModel):
     summary: str = Field(min_length=1)
     limitations: str = Field(min_length=1)
     evidence_image_count: int = Field(ge=1)
+
+
+class CqcWebComparisonOutcome(StrEnum):
+    MATCH = "Match"
+    MISMATCH = "Mismatch"
+    MISSING_IMAGE = "Missing from uploaded document"
+    MISSING_WEBSITE = "Missing from CQC website"
+    INCONCLUSIVE = "Inconclusive"
+
+
+class CqcWebComparisonItem(BaseModel):
+    field_name: CertificateFieldName
+    image_value: str | None = None
+    website_value: str | None = None
+    outcome: CqcWebComparisonOutcome
+    explanation: str = Field(min_length=1)
+
+
+class CqcWebComparisonReport(BaseModel):
+    """Compares uploaded certificate fields with mapped CQC website fields."""
+
+    check_type: Literal["Uploaded Document vs CQC Website Comparison"] = (
+        "Uploaded Document vs CQC Website Comparison"
+    )
+    status: InfoCheckStatus
+    comparisons: list[CqcWebComparisonItem] = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    limitations: str = Field(min_length=1)
+    website_source_url: str | None = None
+    website_fetch_error: str | None = None

@@ -4,9 +4,14 @@ from pathlib import Path
 from typing import Any
 
 import streamlit as st
+from sandbox.src.certificate_comparison import format_comparison_report_plain_text
 from sandbox.src.certificate_fields import format_certificate_fields_plain_text
 from sandbox.src.cqc_web import format_cqc_page_plain_text
-from sandbox.src.schemas import CccCertificateFields, ProcessedDocument
+from sandbox.src.schemas import (
+    CccCertificateFields,
+    InfoCheckStatus,
+    ProcessedDocument,
+)
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
@@ -98,6 +103,32 @@ def render_processed_document(processed: ProcessedDocument) -> None:
             format_certificate_fields_plain_text(certificate),
             language=None,
         )
+
+    with st.container(border=True):
+        st.markdown("**:material/compare: Comparison report / 比对报告**")
+        report = processed.cqc_comparison_report
+        if report is None:
+            st.info(
+                "No CQC website URL was found, so no comparison was generated. / "
+                "未识别到 CQC 官网链接，无法生成比对报告。"
+            )
+        else:
+            if report.status == InfoCheckStatus.ALL_MATCHED:
+                st.success(
+                    f"{report.status.value} / 全部一致",
+                    icon=":material/check_circle:",
+                )
+            elif report.status == InfoCheckStatus.MISMATCH_FOUND:
+                st.error(
+                    f"{report.status.value} / 发现不一致",
+                    icon=":material/error:",
+                )
+            else:
+                st.warning(
+                    f"{report.status.value} / 结果不确定",
+                    icon=":material/warning:",
+                )
+            st.code(format_comparison_report_plain_text(report), language=None)
 
 
 def _is_http_url(payload: str) -> bool:

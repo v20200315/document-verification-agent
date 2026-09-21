@@ -14,6 +14,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from sandbox.app.pipeline_service import process_uploaded_document
+from sandbox.src.certificate_comparison import compare_certificate_sources
 from sandbox.src.certificate_fields import (
     CertificateFieldExtractor,
     format_certificate_fields_plain_text,
@@ -478,6 +479,8 @@ def test_process_uploaded_document_includes_cqc_json() -> None:
     assert processed.cqc_page_fields["证书编号 Certificate No."] == "2025010703748148"
     assert processed.cqc_certificate is not None
     assert processed.cqc_certificate.certificate_number == "2025010703748148"
+    assert processed.cqc_comparison_report is not None
+    assert processed.cqc_comparison_report.website_source_url == CQC_DETAIL_URL
 
 
 def test_cqc_fetch_failure_preserves_other_results() -> None:
@@ -507,6 +510,22 @@ def test_cqc_fetch_failure_preserves_other_results() -> None:
     assert processed.cqc_certificate is None
     assert processed.cqc_fetch_error is not None
     assert "Unable to fetch CQC page" in processed.cqc_fetch_error
+    assert processed.cqc_comparison_report is not None
+    assert processed.cqc_comparison_report.website_fetch_error is not None
+
+
+def test_compare_certificate_sources_treats_whitespace_differences_as_match() -> None:
+    report = compare_certificate_sources(
+        image_certificate=CccCertificateFields(issue_date="2024 年 07 月 19 日"),
+        website_certificate=CccCertificateFields(issue_date="2024年07月19日"),
+        website_source_url=CQC_DETAIL_URL,
+    )
+
+    assert report is not None
+    issue_item = next(
+        item for item in report.comparisons if item.field_name.value == "Issue date"
+    )
+    assert issue_item.outcome.value == "Match"
 
 
 def test_decode_qr_in_pdf(tmp_path: Path) -> None:
