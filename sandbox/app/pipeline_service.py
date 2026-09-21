@@ -91,16 +91,17 @@ def process_uploaded_document(
         except Exception as exc:  # noqa: BLE001
             processing_error = f"{exc.__class__.__name__}: {exc}"
 
+        cqc_page_fields, cqc_certificate, cqc_fetch_error, cqc_source_url = (
+            fetch_cqc_certificate_from_qr(qr_payloads, field_extractor)
+        )
         if processing_error is None:
-            cqc_certificate, cqc_fetch_error = fetch_cqc_certificate_from_qr(
-                qr_payloads,
-                field_extractor,
-            )
             return ProcessedDocument(
                 file_md5=file_md5,
                 qr_payloads=qr_payloads,
                 certificate=certificate,
+                cqc_page_fields=cqc_page_fields,
                 cqc_certificate=cqc_certificate,
+                cqc_source_url=cqc_source_url,
                 cqc_fetch_error=cqc_fetch_error,
                 document=document,
             )
@@ -110,15 +111,16 @@ def process_uploaded_document(
                 field_extractor = getattr(pipeline_factory(), "field_extractor", None)
             except Exception:  # noqa: BLE001
                 field_extractor = None
-        cqc_certificate, cqc_fetch_error = fetch_cqc_certificate_from_qr(
-            qr_payloads,
-            field_extractor,
-        )
+            cqc_page_fields, cqc_certificate, cqc_fetch_error, cqc_source_url = (
+                fetch_cqc_certificate_from_qr(qr_payloads, field_extractor)
+            )
         return ProcessedDocument(
             file_md5=file_md5,
             qr_payloads=qr_payloads,
             certificate=certificate,
+            cqc_page_fields=cqc_page_fields,
             cqc_certificate=cqc_certificate,
+            cqc_source_url=cqc_source_url,
             cqc_fetch_error=cqc_fetch_error,
             document=document,
             processing_error=processing_error,

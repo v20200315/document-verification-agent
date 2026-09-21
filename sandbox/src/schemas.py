@@ -75,7 +75,9 @@ class ProcessedDocument(BaseModel):
     file_md5: str = Field(min_length=32, max_length=32)
     qr_payloads: list[str] = Field(default_factory=list)
     certificate: CccCertificateFields | None = None
+    cqc_page_fields: dict[str, str] = Field(default_factory=dict)
     cqc_certificate: CccCertificateFields | None = None
+    cqc_source_url: str | None = None
     cqc_fetch_error: str | None = None
     document: DocumentResult | None = None
     processing_error: str | None = None

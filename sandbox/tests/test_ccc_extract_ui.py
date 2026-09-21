@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -44,11 +43,17 @@ def _processed_document() -> ProcessedDocument:
             issue_date="2024 年 07 月 19 日",
             valid_until="2029 年 07 月 18 日",
         ),
+        cqc_page_fields={
+            "证书编号 Certificate No.": "2025010703748148",
+            "证书状态": "有效",
+            "产品名称 Product Name": "低环境温度变频式空气源热泵（冷水）机组",
+        },
         cqc_certificate=CccCertificateFields(
             certificate_number="2025010703748148",
             certificate_status="有效",
             product_name="低环境温度变频式空气源热泵（冷水）机组",
         ),
+        cqc_source_url=CQC_URL,
         document=DocumentResult(
             file_name="certificate.jpg",
             file_type="image",
@@ -84,18 +89,24 @@ def test_start_shows_json_qr_and_md5_sections(monkeypatch: pytest.MonkeyPatch) -
         assert not app.exception
         assert process_mock.call_count == 1
         markdown_values = [item.value for item in app.markdown]
-        assert any("Certificate JSON" in value for value in markdown_values)
+        assert any("Certificate text" in value for value in markdown_values)
         assert any("CQC QR URL" in value for value in markdown_values)
         assert any("File MD5" in value for value in markdown_values)
-        assert any("CQC website JSON" in value for value in markdown_values)
-        json_payloads = [json.loads(item.value) for item in app.json]
+        assert any("CQC website data" in value for value in markdown_values)
+        assert any("Old version info" in value for value in markdown_values)
+        assert any("Current version info" in value for value in markdown_values)
+        code_values = [code.value for code in app.code]
         assert any(
-            payload.get("product_name") == "低环境温度变频式空气源热泵（冷水）机组"
-            for payload in json_payloads
+            "Product name / 产品名称: 低环境温度变频式空气源热泵（冷水）机组" in value
+            for value in code_values
         )
         assert any(
-            payload.get("certificate_number") == "2025010703748148"
-            for payload in json_payloads
+            "证书编号 Certificate No.: 2025010703748148" in value
+            for value in code_values
+        )
+        assert any(
+            "Certificate number / 证书编号: 2025010703748148" in value
+            for value in code_values
         )
         assert any(code.value == MD5_DIGEST for code in app.code)
         link_labels = [button.label for button in app.get("link_button")]

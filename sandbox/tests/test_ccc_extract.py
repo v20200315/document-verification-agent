@@ -14,11 +14,20 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from sandbox.app.pipeline_service import process_uploaded_document
-from sandbox.src.certificate_fields import CertificateFieldExtractor
+from sandbox.src.certificate_fields import (
+    CertificateFieldExtractor,
+    format_certificate_fields_plain_text,
+)
 from sandbox.src.cqc_web import (
+    VISIBLE_TEXT_KEY,
     fetch_cqc_certificate_from_qr,
+    fetch_page_html,
     fetch_page_text,
+    format_cqc_page_plain_text,
+    html_to_field_map,
+    html_to_page_json,
     html_to_text,
+    page_content_for_extraction,
     select_cqc_url,
 )
 from sandbox.src.errors import CqcWebFetchError, DocumentLoadError, ExtractionError
@@ -291,6 +300,64 @@ def test_select_cqc_url_prefers_cqc_host() -> None:
     ) == CQC_DETAIL_URL
 
 
+def test_select_cqc_url_prefers_certificate_query_url() -> None:
+    homepage = "https://www.cqc.com.cn/www/english/"
+    detail = "https://webdata.cqccms.com.cn/webdata/query/CCCCerti.do?certno=123"
+    assert select_cqc_url([homepage, detail]) == detail
+
+
+def test_html_to_field_map_extracts_table_pairs() -> None:
+    field_map = html_to_field_map(SAMPLE_CQC_HTML)
+
+    assert field_map["证书编号 Certificate No."] == "2025010703748148"
+    assert field_map["证书状态"] == "有效"
+    assert field_map["制造商 Manufacturer"] == "浙江德富新能源技术有限公司"
+
+
+def test_plain_text_formatters_for_upload_and_cqc_page() -> None:
+    page_fields = html_to_page_json(SAMPLE_CQC_HTML)
+    html_text = format_cqc_page_plain_text(page_fields)
+    certificate_text = format_certificate_fields_plain_text(
+        CccCertificateFields(
+            certificate_number="2025010703748148",
+            certificate_status="有效",
+        )
+    )
+
+    assert "证书编号 Certificate No.: 2025010703748148" in html_text
+    assert "2025010703748148" in html_text
+    assert "Certificate number / 证书编号: 2025010703748148" in certificate_text
+    assert "Certificate status / 证书状态: 有效" in certificate_text
+
+
+def test_html_to_page_json_includes_all_fields_and_visible_text() -> None:
+    page_json = html_to_page_json(SAMPLE_CQC_HTML)
+
+    assert page_json["证书编号 Certificate No."] == "2025010703748148"
+    assert page_json["产品型号 Product Type"] == "DF-CTS064 I /04 220V～ 50Hz R410A"
+    assert VISIBLE_TEXT_KEY in page_json
+    assert "2025010703748148" in page_json[VISIBLE_TEXT_KEY]
+
+
+def test_html_to_page_json_extracts_definition_list() -> None:
+    html = """<html><body><dl>
+    <dt>证书编号</dt><dd>2025010703748148</dd>
+    <dt>证书状态</dt><dd>有效</dd>
+    </dl></body></html>"""
+
+    page_json = html_to_page_json(html)
+
+    assert page_json["证书编号"] == "2025010703748148"
+    assert page_json["证书状态"] == "有效"
+
+
+def test_page_content_for_extraction_includes_all_table_fields() -> None:
+    content = page_content_for_extraction(SAMPLE_CQC_HTML)
+
+    assert "证书编号 Certificate No.: 2025010703748148" in content
+    assert "产品名称 Product Name: 低环境温度变频式空气源热泵（冷水）机组" in content
+
+
 def test_html_to_text_strips_tags() -> None:
     text = html_to_text(SAMPLE_CQC_HTML)
 
@@ -302,6 +369,18 @@ def test_html_to_text_strips_tags() -> None:
 def test_fetch_page_text_blocks_non_cqc_host() -> None:
     with pytest.raises(CqcWebFetchError, match="Blocked non-CQC URL"):
         fetch_page_text("https://example.com/certificate")
+
+
+def test_fetch_page_html_returns_raw_html() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url) == CQC_DETAIL_URL
+        return httpx.Response(200, text=SAMPLE_CQC_HTML)
+
+    transport = httpx.MockTransport(handler)
+    with httpx.Client(transport=transport) as client:
+        html = fetch_page_html(CQC_DETAIL_URL, client=client)
+
+    assert "2025010703748148" in html
 
 
 def test_fetch_page_text_returns_visible_text() -> None:
@@ -340,7 +419,7 @@ def test_certificate_extractor_parses_web_structured_json() -> None:
 
     fields = CertificateFieldExtractor(
         StructuredFactory(structured), max_attempts=1
-    ).extract_from_web(html_to_text(SAMPLE_CQC_HTML))
+    ).extract_from_web(page_content_for_extraction(SAMPLE_CQC_HTML))
 
     assert fields.certificate_number == "2025010703748148"
     assert fields.certificate_status == "有效"
@@ -348,24 +427,30 @@ def test_certificate_extractor_parses_web_structured_json() -> None:
 
 def test_fetch_cqc_certificate_from_qr_populates_json() -> None:
     with patch(
-        "sandbox.src.cqc_web.fetch_page_text",
-        return_value=html_to_text(SAMPLE_CQC_HTML),
+        "sandbox.src.cqc_web.fetch_page_html",
+        return_value=SAMPLE_CQC_HTML,
     ):
-        certificate, error = fetch_cqc_certificate_from_qr(
+        page_fields, certificate, error, source_url = fetch_cqc_certificate_from_qr(
             [CQC_DETAIL_URL],
             FakeFieldExtractor(),
         )
 
     assert error is None
+    assert source_url == CQC_DETAIL_URL
+    assert page_fields["证书编号 Certificate No."] == "2025010703748148"
     assert certificate is not None
     assert certificate.certificate_number == "2025010703748148"
 
 
 def test_fetch_cqc_certificate_from_qr_without_url() -> None:
-    certificate, error = fetch_cqc_certificate_from_qr([], FakeFieldExtractor())
+    page_fields, certificate, error, source_url = fetch_cqc_certificate_from_qr(
+        [], FakeFieldExtractor()
+    )
 
+    assert page_fields == {}
     assert certificate is None
     assert error is None
+    assert source_url is None
 
 
 def test_process_uploaded_document_includes_cqc_json() -> None:
@@ -379,8 +464,8 @@ def test_process_uploaded_document_includes_cqc_json() -> None:
     fields = CccCertificateFields(product_name="heat pump")
 
     with patch(
-        "sandbox.src.cqc_web.fetch_page_text",
-        return_value=html_to_text(SAMPLE_CQC_HTML),
+        "sandbox.src.cqc_web.fetch_page_html",
+        return_value=SAMPLE_CQC_HTML,
     ):
         processed = process_uploaded_document(
             "upload.png",
@@ -389,6 +474,8 @@ def test_process_uploaded_document_includes_cqc_json() -> None:
         )
 
     assert processed.cqc_fetch_error is None
+    assert processed.cqc_source_url == CQC_DETAIL_URL
+    assert processed.cqc_page_fields["证书编号 Certificate No."] == "2025010703748148"
     assert processed.cqc_certificate is not None
     assert processed.cqc_certificate.certificate_number == "2025010703748148"
 
@@ -404,7 +491,7 @@ def test_cqc_fetch_failure_preserves_other_results() -> None:
     fields = CccCertificateFields(product_name="heat pump")
 
     with patch(
-        "sandbox.src.cqc_web.fetch_page_text",
+        "sandbox.src.cqc_web.fetch_page_html",
         side_effect=CqcWebFetchError("Unable to fetch CQC page"),
     ):
         processed = process_uploaded_document(
@@ -416,6 +503,7 @@ def test_cqc_fetch_failure_preserves_other_results() -> None:
     assert processed.certificate == fields
     assert processed.file_md5
     assert processed.qr_payloads[0] == CQC_DETAIL_URL
+    assert processed.cqc_page_fields == {}
     assert processed.cqc_certificate is None
     assert processed.cqc_fetch_error is not None
     assert "Unable to fetch CQC page" in processed.cqc_fetch_error
