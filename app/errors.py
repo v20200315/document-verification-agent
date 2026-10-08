@@ -9,5 +9,9 @@ class VerificationTimeoutError(TimeoutError):
     """Raised when verification exceeds the allowed time."""
 
 
+class QueueTimeoutError(TimeoutError):
+    """Raised when a request waits too long for a concurrency slot."""
+
+
 class VerificationSystemError(RuntimeError):
     """Raised when verification fails due to an internal or pipeline error."""

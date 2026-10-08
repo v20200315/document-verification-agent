@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from app.errors import DocumentTypeError, VerificationSystemError
+from app.errors import DocumentTypeError, QueueTimeoutError, VerificationSystemError
 from app.main import app
 from sandbox.src.errors import DocumentLoadError
 
@@ -95,6 +95,7 @@ def test_verify_ccc_reports_system_error(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_verify_ccc_reports_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.api.verification.is_api_configured", lambda: True)
     monkeypatch.setattr("app.api.verification.CCC_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr("app.api.verification.CCC_QUEUE_WAIT_SECONDS", 1)
 
     def _slow(_name: str, _data: bytes) -> None:
         import time
@@ -151,3 +152,21 @@ def test_verify_ccc_rejects_empty_upload(monkeypatch: pytest.MonkeyPatch) -> Non
     )
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_upload"
+
+
+def test_verify_ccc_reports_queue_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.api.verification.is_api_configured", lambda: True)
+    monkeypatch.setattr(
+        "app.api.verification.run_with_queue",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            QueueTimeoutError("CCC 核验排队超时，请稍后重试。")
+        ),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/verify/ccc",
+        files={"file": ("cert.jpg", b"not-empty", "image/jpeg")},
+    )
+    assert response.status_code == 429
+    assert response.json()["status_code"] == 429
+    assert response.json()["error"] == "queue_timeout"

@@ -40,6 +40,15 @@ def test_build_ccc_final_markdown_includes_comparison_only() -> None:
 
     assert markdown.startswith("# CCC 证书核验最终报告\n")
     assert "## 字段比对" in markdown
+    assert "### 证书编号" in markdown
+    assert "### 型号规格" in markdown
+    assert "### 适用标准" in markdown
+    assert "### 有效期核验" in markdown
+    assert "### 证书状态核验" in markdown
+    assert "结果：**一致**" in markdown
+    assert "数据来源：上传文档" in markdown
+    assert "Certificate number" not in markdown
+    assert "Mismatch Found" not in markdown
     assert "|" not in markdown
     assert "certificate_number" not in markdown
     assert "qr_payloads" not in markdown
@@ -71,4 +80,6 @@ def test_build_test_report_final_markdown_uses_compliance_section() -> None:
 
     assert markdown.startswith("# 检测报告核验最终报告\n")
     assert "## 规则核验" in markdown
+    assert "结论：**通过**" in markdown
+    assert "结果：**通过**" in markdown
     assert "full_content" not in markdown

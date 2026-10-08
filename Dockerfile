@@ -16,10 +16,9 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY sandbox ./sandbox
+COPY app ./app
 COPY .streamlit ./.streamlit
 
-WORKDIR /app/sandbox/app
+EXPOSE 8000 8501
 
-EXPOSE 8501
-
-CMD ["uv", "run", "--no-sync", "streamlit", "run", "streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]
+CMD ["uv", "run", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

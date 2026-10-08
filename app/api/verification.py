@@ -1,18 +1,24 @@
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Callable
-from typing import Any
-
 from fastapi import APIRouter, File, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.errors import (
     DocumentTypeError,
+    QueueTimeoutError,
     VerificationSystemError,
     VerificationTimeoutError,
 )
 from app.models.responses import MarkdownReportResponse
+from app.queue_control import (
+    CCC_QUEUE_WAIT_SECONDS,
+    CCC_TIMEOUT_SECONDS,
+    TEST_REPORT_QUEUE_WAIT_SECONDS,
+    TEST_REPORT_TIMEOUT_SECONDS,
+    ccc_slots,
+    run_with_queue,
+    test_report_slots,
+)
 from app.reports.markdown_reports import (
     build_ccc_final_markdown,
     build_test_report_final_markdown,
@@ -24,11 +30,10 @@ from sandbox.src.errors import DocumentLoadError
 
 router = APIRouter(prefix="/verify", tags=["verification"])
 
-CCC_TIMEOUT_SECONDS = 60
-TEST_REPORT_TIMEOUT_SECONDS = 180
 ERROR_RESPONSES = {
     400: {"description": "Invalid upload"},
     422: {"description": "Not the expected document type"},
+    429: {"description": "Verification queue is busy"},
     500: {"description": "System error"},
     503: {"description": "API key is not configured"},
     504: {"description": "Verification timed out"},
@@ -53,21 +58,6 @@ def _error_response(status_code: int, error: str, detail: str) -> JSONResponse:
     )
 
 
-async def _run_with_timeout[T](
-    func: Callable[..., T],
-    *args: Any,
-    timeout_seconds: float,
-    timeout_message: str,
-) -> T:
-    try:
-        return await asyncio.wait_for(
-            asyncio.to_thread(func, *args),
-            timeout=timeout_seconds,
-        )
-    except TimeoutError as exc:
-        raise VerificationTimeoutError(timeout_message) from exc
-
-
 @router.post(
     "/ccc",
     response_model=MarkdownReportResponse,
@@ -82,17 +72,22 @@ async def verify_ccc(
     file_name = file.filename or "upload.pdf"
     data = await file.read()
     try:
-        processed = await _run_with_timeout(
+        processed = await run_with_queue(
             process_uploaded_document,
             file_name,
             data,
+            slots=ccc_slots(),
+            queue_wait_seconds=CCC_QUEUE_WAIT_SECONDS,
             timeout_seconds=CCC_TIMEOUT_SECONDS,
+            queue_timeout_message="CCC 核验排队超时，请稍后重试。",
             timeout_message="CCC 核验超时（超过 1 分钟）。",
         )
     except DocumentLoadError as exc:
         return _error_response(400, "invalid_upload", str(exc))
     except DocumentTypeError as exc:
         return _error_response(422, "not_ccc_document", str(exc))
+    except QueueTimeoutError as exc:
+        return _error_response(429, "queue_timeout", str(exc))
     except VerificationTimeoutError as exc:
         return _error_response(504, "timeout", str(exc))
     except VerificationSystemError as exc:
@@ -120,11 +115,14 @@ async def verify_test_report(
     file_name = file.filename or "upload.pdf"
     data = await file.read()
     try:
-        classification, compliance, validation_note = await _run_with_timeout(
+        classification, compliance, validation_note = await run_with_queue(
             verify_uploaded_test_report,
             file_name,
             data,
+            slots=test_report_slots(),
+            queue_wait_seconds=TEST_REPORT_QUEUE_WAIT_SECONDS,
             timeout_seconds=TEST_REPORT_TIMEOUT_SECONDS,
+            queue_timeout_message="检测报告核验排队超时，请稍后重试。",
             timeout_message="检测报告核验超时（超过 3 分钟）。",
         )
     except DocumentLoadError as exc:
@@ -133,6 +131,8 @@ async def verify_test_report(
         return _error_response(400, "invalid_upload", str(exc))
     except DocumentTypeError as exc:
         return _error_response(422, "not_test_report", str(exc))
+    except QueueTimeoutError as exc:
+        return _error_response(429, "queue_timeout", str(exc))
     except VerificationTimeoutError as exc:
         return _error_response(504, "timeout", str(exc))
     except VerificationSystemError as exc:

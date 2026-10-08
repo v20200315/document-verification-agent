@@ -1,7 +1,59 @@
 from __future__ import annotations
 
 from sandbox.app.verify_test_report.backend import ComplianceReport, TestReportResult
-from sandbox.src.schemas import CqcWebComparisonReport, ProcessedDocument
+from sandbox.src.schemas import (
+    CertificateFieldName,
+    CqcVerificationCheckName,
+    CqcWebComparisonOutcome,
+    CqcWebComparisonReport,
+    CqcWebVerificationOutcome,
+    InfoCheckStatus,
+    ProcessedDocument,
+)
+
+FIELD_NAME_ZH: dict[str, str] = {
+    CertificateFieldName.CERTIFICATE_NUMBER.value: "证书编号",
+    CertificateFieldName.STATUS.value: "证书状态",
+    CertificateFieldName.HOLDER.value: "认证委托人",
+    CertificateFieldName.MANUFACTURER.value: "制造商",
+    CertificateFieldName.FACTORY.value: "生产厂",
+    CertificateFieldName.PRODUCT.value: "产品名称",
+    CertificateFieldName.MODEL.value: "型号规格",
+    CertificateFieldName.STANDARDS.value: "适用标准",
+    CertificateFieldName.ISSUING_BODY.value: "发证机构",
+    CertificateFieldName.ISSUE_DATE.value: "发证日期",
+    CertificateFieldName.VALID_UNTIL.value: "有效期至",
+}
+
+OVERALL_STATUS_ZH: dict[str, str] = {
+    InfoCheckStatus.ALL_MATCHED.value: "全部一致",
+    InfoCheckStatus.MISMATCH_FOUND.value: "发现不一致",
+    InfoCheckStatus.INCONCLUSIVE.value: "结果不确定",
+}
+
+COMPARISON_OUTCOME_ZH: dict[str, str] = {
+    CqcWebComparisonOutcome.MATCH.value: "一致",
+    CqcWebComparisonOutcome.MISMATCH.value: "不一致",
+    CqcWebComparisonOutcome.MISSING_IMAGE.value: "上传文档缺失",
+    CqcWebComparisonOutcome.MISSING_WEBSITE.value: "官网缺失",
+    CqcWebComparisonOutcome.INCONCLUSIVE.value: "无法判定",
+}
+
+VERIFICATION_OUTCOME_ZH: dict[str, str] = {
+    CqcWebVerificationOutcome.PASS.value: "通过",
+    CqcWebVerificationOutcome.FAIL.value: "未通过",
+    CqcWebVerificationOutcome.INCONCLUSIVE.value: "无法判定",
+}
+
+CHECK_NAME_ZH: dict[str, str] = {
+    CqcVerificationCheckName.EXPIRATION_DATE.value: "有效期核验",
+    CqcVerificationCheckName.CERTIFICATE_STATUS.value: "证书状态核验",
+}
+
+SOURCE_ZH: dict[str, str] = {
+    "uploaded document": "上传文档",
+    "CQC website": "CQC 官网",
+}
 
 
 def build_ccc_final_markdown(processed: ProcessedDocument) -> str:
@@ -69,7 +121,7 @@ def build_test_report_final_markdown(
             "",
             "## 总体结果",
             "",
-            f"- 结论：**{compliance.overall_status.value}**（{status_label}）",
+            f"- 结论：**{status_label}**",
             "",
             "## 摘要",
             "",
@@ -85,7 +137,7 @@ def build_test_report_final_markdown(
             [
                 f"### {finding.rule_number}. {finding.rule_text}",
                 "",
-                f"- 结果：**{finding.status.value}**（{finding_status}）",
+                f"- 结果：**{finding_status}**",
                 f"- 依据：{finding.evidence}",
                 "",
             ]
@@ -97,7 +149,7 @@ def _comparison_report_markdown(report: CqcWebComparisonReport) -> str:
     sections: list[str] = [
         "## 总体结果",
         "",
-        f"- 结论：**{report.status.value}**",
+        f"- 结论：**{_label(OVERALL_STATUS_ZH, report.status.value)}**",
         "",
         "## 摘要",
         "",
@@ -112,9 +164,9 @@ def _comparison_report_markdown(report: CqcWebComparisonReport) -> str:
     for item in report.comparisons:
         sections.extend(
             [
-                f"### {item.field_name.value}",
+                f"### {_label(FIELD_NAME_ZH, item.field_name.value)}",
                 "",
-                f"- 结果：**{item.outcome.value}**",
+                f"- 结果：**{_label(COMPARISON_OUTCOME_ZH, item.outcome.value)}**",
                 f"- 上传文档：{_display(item.image_value)}",
                 f"- 官网数据：{_display(item.website_value)}",
                 f"- 说明：{item.explanation}",
@@ -126,10 +178,10 @@ def _comparison_report_markdown(report: CqcWebComparisonReport) -> str:
     for item in report.verifications:
         sections.extend(
             [
-                f"### {item.check_name.value}",
+                f"### {_label(CHECK_NAME_ZH, item.check_name.value)}",
                 "",
-                f"- 结果：**{item.outcome.value}**",
-                f"- 数据来源：{item.source}",
+                f"- 结果：**{_label(VERIFICATION_OUTCOME_ZH, item.outcome.value)}**",
+                f"- 数据来源：{_label(SOURCE_ZH, item.source)}",
                 f"- 观测值：{_display(item.observed_value)}",
                 f"- 说明：{item.explanation}",
                 "",
@@ -138,6 +190,10 @@ def _comparison_report_markdown(report: CqcWebComparisonReport) -> str:
 
     sections.extend(["## 说明", "", report.limitations])
     return "\n".join(sections)
+
+
+def _label(mapping: dict[str, str], value: str) -> str:
+    return mapping.get(value, value)
 
 
 def _compliance_status_label(status: str) -> str:
