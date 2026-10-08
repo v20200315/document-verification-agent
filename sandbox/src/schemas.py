@@ -214,6 +214,25 @@ class CqcWebComparisonItem(BaseModel):
     explanation: str = Field(min_length=1)
 
 
+class CqcVerificationCheckName(StrEnum):
+    EXPIRATION_DATE = "Expiration date validity"
+    CERTIFICATE_STATUS = "Certificate status validity"
+
+
+class CqcWebVerificationOutcome(StrEnum):
+    PASS = "Pass"
+    FAIL = "Fail"
+    INCONCLUSIVE = "Inconclusive"
+
+
+class CqcWebVerificationItem(BaseModel):
+    check_name: CqcVerificationCheckName
+    source: Literal["uploaded document", "CQC website"]
+    observed_value: str | None = None
+    outcome: CqcWebVerificationOutcome
+    explanation: str = Field(min_length=1)
+
+
 class CqcWebComparisonReport(BaseModel):
     """Compares uploaded certificate fields with mapped CQC website fields."""
 
@@ -222,6 +241,7 @@ class CqcWebComparisonReport(BaseModel):
     )
     status: InfoCheckStatus
     comparisons: list[CqcWebComparisonItem] = Field(min_length=1)
+    verifications: list[CqcWebVerificationItem] = Field(min_length=1)
     summary: str = Field(min_length=1)
     limitations: str = Field(min_length=1)
     website_source_url: str | None = None

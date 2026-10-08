@@ -136,13 +136,63 @@ LANGSMITH_PROJECT=document-verification-agent
 
 ### Run
 
-**API** (after FastAPI is wired in `app/main.py`):
+**API**:
 
 ```bash
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Open API docs at `http://localhost:8000/docs`.
+Interactive docs: `http://localhost:8000/docs`. Health check: `GET /health`.
+
+Both verification endpoints accept a **multipart file upload** (`file`). Success and errors both return JSON with `status_code`. A successful body also includes `report` (Markdown). An error body includes `error` and `detail`. Set `DASHSCOPE_API_KEY` in the environment or project-root `.env`.
+
+#### `POST /verify/ccc`
+
+Verify a CCC certificate. Upload one PDF or image (`pdf`, `jpg`, `jpeg`, `png`). The service extracts certificate fields, reads the CQC QR URL, fetches the current website record, compares certificate number / models / standards, and checks expiration (from the upload) plus certificate status (from the website). Timeout: **60 seconds**.
+
+```bash
+curl -X POST "http://localhost:8000/verify/ccc" \
+  -F "file=@/path/to/certificate.jpg"
+```
+
+#### `POST /verify/test-report`
+
+Verify a Chinese product test report. Upload one **PDF** (max 50 MB). The service classifies the product category and runs the category rules. Timeout: **180 seconds**.
+
+```bash
+curl -X POST "http://localhost:8000/verify/test-report" \
+  -F "file=@/path/to/report.pdf"
+```
+
+#### Status codes
+
+| HTTP | `error` | Meaning |
+| --- | --- | --- |
+| 200 | — | Verification finished; JSON with `status_code` and Markdown `report` |
+| 400 | `invalid_upload` | Empty file or unsupported type |
+| 422 | `not_ccc_document` / `not_test_report` | File is not a CCC certificate, or the report category is Other |
+| 500 | `system_error` | Pipeline or unexpected system failure |
+| 503 | `missing_api_key` | `DASHSCOPE_API_KEY` is not configured |
+| 504 | `timeout` | CCC exceeded 1 minute, or test report exceeded 3 minutes |
+
+Success body:
+
+```json
+{
+  "status_code": 200,
+  "report": "# CCC 证书核验最终报告\n\n..."
+}
+```
+
+Error body:
+
+```json
+{
+  "status_code": 422,
+  "error": "not_ccc_document",
+  "detail": "上传文件不是 CCC 证书，当前识别类型为：Other。"
+}
+```
 
 **Sandbox Streamlit** (CCC, Simple RAG, Image PDF to Text, Verify Test Report):
 
@@ -317,13 +367,63 @@ LANGSMITH_PROJECT=document-verification-agent
 
 ### 运行
 
-**API**（在 `app/main.py` 接入 FastAPI 之后）：
+**API**：
 
 ```bash
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-接口文档：`http://localhost:8000/docs`。
+交互文档：`http://localhost:8000/docs`。健康检查：`GET /health`。
+
+两个核验接口都使用 **multipart 文件上传**（字段名 `file`）。成功和失败都返回带 `status_code` 的 JSON。成功时另有 Markdown 字段 `report`；失败时另有 `error`、`detail`。需在环境变量或项目根目录 `.env` 中配置 `DASHSCOPE_API_KEY`。
+
+#### `POST /verify/ccc`
+
+核验 CCC 证书。上传一份 PDF 或图片（`pdf` / `jpg` / `jpeg` / `png`）。服务会提取证书字段、识别 CQC 二维码链接、抓取官网当前记录，比对证书编号 / 型号规格 / 适用标准，并核验上传件有效期与官网证书状态。超时：**60 秒**。
+
+```bash
+curl -X POST "http://localhost:8000/verify/ccc" \
+  -F "file=@/path/to/certificate.jpg"
+```
+
+#### `POST /verify/test-report`
+
+核验检测报告。上传一份 **PDF**（最大 50 MB）。服务会识别产品类别并按对应规则做合规核验。超时：**180 秒**。
+
+```bash
+curl -X POST "http://localhost:8000/verify/test-report" \
+  -F "file=@/path/to/report.pdf"
+```
+
+#### 状态码
+
+| HTTP | `error` | 含义 |
+| --- | --- | --- |
+| 200 | — | 核验完成，JSON 含 `status_code` 与 Markdown `report` |
+| 400 | `invalid_upload` | 空文件或格式不支持 |
+| 422 | `not_ccc_document` / `not_test_report` | 不是 CCC 证书，或检测报告类别为 Other |
+| 500 | `system_error` | 解析失败或其他系统错误 |
+| 503 | `missing_api_key` | 未配置 `DASHSCOPE_API_KEY` |
+| 504 | `timeout` | 3C 超过 1 分钟，或检测报告超过 3 分钟 |
+
+成功体：
+
+```json
+{
+  "status_code": 200,
+  "report": "# CCC 证书核验最终报告\n\n..."
+}
+```
+
+错误体：
+
+```json
+{
+  "status_code": 422,
+  "error": "not_ccc_document",
+  "detail": "上传文件不是 CCC 证书，当前识别类型为：Other。"
+}
+```
 
 **Sandbox Streamlit**（CCC、Simple RAG、图片 PDF 转文本、检测报告核验）：
 

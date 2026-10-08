@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
@@ -73,8 +74,13 @@ def _processed_document() -> ProcessedDocument:
                 certificate_number="2025010703748148",
                 certificate_status="有效",
                 product_name="低环境温度变频式空气源热泵（冷水）机组",
+                models_and_specifications="DF-CTS064 I /04 220V～ 50Hz R410A",
+                applicable_standards=(
+                    "GB 17625.1–2022；GB 4343.1–2018；GB 4706.1–2005 ；GB 4706.32–2012"
+                ),
             ),
             website_source_url=CQC_URL,
+            reference_date=date(2026, 9, 21),
         ),
         document=DocumentResult(
             file_name="certificate.jpg",
@@ -132,6 +138,7 @@ def test_start_shows_json_qr_and_md5_sections(monkeypatch: pytest.MonkeyPatch) -
             for value in code_values
         )
         assert any("Field comparisons / 字段比对:" in value for value in code_values)
+        assert any("Validity checks / 有效性核验:" in value for value in code_values)
         assert any(code.value == MD5_DIGEST for code in app.code)
         link_labels = [button.label for button in app.get("link_button")]
         assert CQC_URL in link_labels

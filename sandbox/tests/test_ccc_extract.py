@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -516,16 +517,29 @@ def test_cqc_fetch_failure_preserves_other_results() -> None:
 
 def test_compare_certificate_sources_treats_whitespace_differences_as_match() -> None:
     report = compare_certificate_sources(
-        image_certificate=CccCertificateFields(issue_date="2024 年 07 月 19 日"),
-        website_certificate=CccCertificateFields(issue_date="2024年07月19日"),
+        image_certificate=CccCertificateFields(
+            certificate_number="2025010703748148",
+            models_and_specifications="DF-CTS064 I /04",
+            applicable_standards="GB 4706.1",
+            valid_until="2029 年 07 月 18 日",
+        ),
+        website_certificate=CccCertificateFields(
+            certificate_number="2025010703748148",
+            models_and_specifications="DF-CTS064I/04",
+            applicable_standards="GB4706.1",
+            certificate_status="有效",
+        ),
         website_source_url=CQC_DETAIL_URL,
+        reference_date=date(2026, 9, 21),
     )
 
     assert report is not None
-    issue_item = next(
-        item for item in report.comparisons if item.field_name.value == "Issue date"
+    model_item = next(
+        item
+        for item in report.comparisons
+        if item.field_name.value == "Models and specifications"
     )
-    assert issue_item.outcome.value == "Match"
+    assert model_item.outcome.value == "Match"
 
 
 def test_decode_qr_in_pdf(tmp_path: Path) -> None:
