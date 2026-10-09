@@ -12,30 +12,47 @@ def _float_env(name: str, default: float) -> float:
     raw = os.getenv(name, "").strip()
     if not raw:
         return default
-    return max(0.0, float(raw))
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return default
 
 
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
+CCC_CONCURRENCY = _int_env("CCC_CONCURRENCY", 1)
+TEST_REPORT_CONCURRENCY = _int_env("TEST_REPORT_CONCURRENCY", 1)
 CCC_TIMEOUT_SECONDS = _float_env("CCC_TIMEOUT_SECONDS", 60)
 TEST_REPORT_TIMEOUT_SECONDS = _float_env("TEST_REPORT_TIMEOUT_SECONDS", 600)
 
 
 class EndpointLimiter:
-    """Allow one in-flight job; extra requests are rejected immediately."""
+    """Allow up to ``limit`` in-flight jobs; extra requests are rejected immediately."""
 
-    def __init__(self) -> None:
+    def __init__(self, limit: int = 1) -> None:
         self._lock = asyncio.Lock()
-        self._busy = False
+        self._limit = max(1, limit)
+        self._in_flight = 0
 
     async def try_acquire(self) -> bool:
         async with self._lock:
-            if self._busy:
+            if self._in_flight >= self._limit:
                 return False
-            self._busy = True
+            self._in_flight += 1
             return True
 
     async def release(self) -> None:
         async with self._lock:
-            self._busy = False
+            if self._in_flight > 0:
+                self._in_flight -= 1
 
 
 _ccc_limiter: EndpointLimiter | None = None
@@ -45,14 +62,14 @@ _test_report_limiter: EndpointLimiter | None = None
 def ccc_limiter() -> EndpointLimiter:
     global _ccc_limiter
     if _ccc_limiter is None:
-        _ccc_limiter = EndpointLimiter()
+        _ccc_limiter = EndpointLimiter(CCC_CONCURRENCY)
     return _ccc_limiter
 
 
 def test_report_limiter() -> EndpointLimiter:
     global _test_report_limiter
     if _test_report_limiter is None:
-        _test_report_limiter = EndpointLimiter()
+        _test_report_limiter = EndpointLimiter(TEST_REPORT_CONCURRENCY)
     return _test_report_limiter
 
 
@@ -70,7 +87,7 @@ async def run_with_queue[T](
     busy_message: str,
     timeout_message: str,
 ) -> T:
-    """Reject immediately if busy, otherwise run the blocking job with an execution timeout."""
+    """Reject immediately if at capacity, otherwise run the blocking job with an execution timeout."""
     if not await limiter.try_acquire():
         raise QueueBusyError(busy_message)
 

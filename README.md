@@ -123,8 +123,10 @@ Copy the keys you need into `.env` in the project root. Do not commit real secre
 ```bash
 DASHSCOPE_API_KEY=sk-...
 
-# Optional: execution timeouts (defaults shown)
+# Optional: in-process concurrency and timeouts (defaults shown)
+# CCC_CONCURRENCY=1
 # CCC_TIMEOUT_SECONDS=60
+# TEST_REPORT_CONCURRENCY=1
 # TEST_REPORT_TIMEOUT_SECONDS=600
 ```
 
@@ -142,7 +144,7 @@ Both verification endpoints accept a **multipart file upload** (`file`). Success
 
 #### `POST /verify/ccc`
 
-Verify a CCC certificate. Upload one PDF or image (`pdf`, `jpg`, `jpeg`, `png`). The service extracts certificate fields, reads the CQC QR URL, fetches the current website record, compares certificate number / models / standards, and checks expiration (from the upload) plus certificate status (from the website). Only **one** CCC request runs at a time; extra requests get **200** immediately with a busy Markdown report. Execution timeout: **60 seconds**.
+Verify a CCC certificate. Upload one PDF or image (`pdf`, `jpg`, `jpeg`, `png`). The service extracts certificate fields, reads the CQC QR URL, fetches the current website record, compares certificate number / models / standards, and checks expiration (from the upload) plus certificate status (from the website). Concurrent jobs: **`CCC_CONCURRENCY`** (default **1**). Extra requests get **200** immediately with a busy Markdown report. Execution timeout: **60 seconds**.
 
 ```bash
 curl -X POST "http://localhost:8000/verify/ccc" \
@@ -151,7 +153,7 @@ curl -X POST "http://localhost:8000/verify/ccc" \
 
 #### `POST /verify/test-report`
 
-Verify a Chinese product test report. Upload one **PDF** (max 50 MB). Text PDFs are classified directly. Image-only PDFs (no selectable text) are OCR'd first, then classified and checked against the category rules. Only **one** test-report request runs at a time; extra requests get **200** immediately with a busy Markdown report. Execution timeout: **600 seconds** (10 minutes).
+Verify a Chinese product test report. Upload one **PDF** (max 50 MB). Text PDFs are classified directly. Image-only PDFs (no selectable text) are OCR'd first, then classified and checked against the category rules. Concurrent jobs: **`TEST_REPORT_CONCURRENCY`** (default **1**). Extra requests get **200** immediately with a busy Markdown report. Execution timeout: **600 seconds** (10 minutes).
 
 ```bash
 curl -X POST "http://localhost:8000/verify/test-report" \
@@ -190,7 +192,7 @@ Error body:
 
 #### Concurrency
 
-Both endpoints are long-running (LLM + HTTP + parsing). Each endpoint allows **one in-flight request**. A second request to the same endpoint returns **200** immediately with this Markdown `report` (no queue wait). CCC and test-report have separate slots, so one type cannot block the other.
+Both endpoints are long-running (LLM + HTTP + parsing). Each endpoint allows a configurable number of in-flight requests (`CCC_CONCURRENCY` / `TEST_REPORT_CONCURRENCY`, default **1**). Extra requests return **200** immediately with this Markdown `report` (no queue wait). CCC and test-report have separate slots, so one type cannot block the other.
 
 ```json
 {
@@ -202,14 +204,14 @@ Both endpoints are long-running (LLM + HTTP + parsing). Each endpoint allows **o
 ```text
 Request
   → read upload
-  → if this endpoint is busy: return 200 with the busy report
+  → if this endpoint is at capacity: return 200 with the busy report
   → run verification (execution timeout)
   → release the slot
 ```
 
 | Setting | CCC default | Test report default |
 | --- | --- | --- |
-| Concurrent executions | 1 | 1 |
+| Concurrent executions | `CCC_CONCURRENCY=1` | `TEST_REPORT_CONCURRENCY=1` |
 | Extra requests | immediate 200 busy report | immediate 200 busy report |
 | Execution timeout | `CCC_TIMEOUT_SECONDS=60` | `TEST_REPORT_TIMEOUT_SECONDS=600` |
 
@@ -534,8 +536,10 @@ source .venv/bin/activate
 ```bash
 DASHSCOPE_API_KEY=sk-...
 
-# 可选：执行超时（下列为默认值）
+# 可选：进程内并发与超时（下列为默认值）
+# CCC_CONCURRENCY=1
 # CCC_TIMEOUT_SECONDS=60
+# TEST_REPORT_CONCURRENCY=1
 # TEST_REPORT_TIMEOUT_SECONDS=600
 ```
 
@@ -553,7 +557,7 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 #### `POST /verify/ccc`
 
-核验 CCC 证书。上传一份 PDF 或图片（`pdf` / `jpg` / `jpeg` / `png`）。服务会提取证书字段、识别 CQC 二维码链接、抓取官网当前记录，比对证书编号 / 型号规格 / 适用标准，并核验上传件有效期与官网证书状态。同一时间只处理 **1** 个 CCC 请求，超出立即返回 **200** 及忙时 Markdown 报告。执行超时：**60 秒**。
+核验 CCC 证书。上传一份 PDF 或图片（`pdf` / `jpg` / `jpeg` / `png`）。服务会提取证书字段、识别 CQC 二维码链接、抓取官网当前记录，比对证书编号 / 型号规格 / 适用标准，并核验上传件有效期与官网证书状态。同时执行数：**`CCC_CONCURRENCY`**（默认 **1**）。超出立即返回 **200** 及忙时 Markdown 报告。执行超时：**60 秒**。
 
 ```bash
 curl -X POST "http://localhost:8000/verify/ccc" \
@@ -562,7 +566,7 @@ curl -X POST "http://localhost:8000/verify/ccc" \
 
 #### `POST /verify/test-report`
 
-核验检测报告。上传一份 **PDF**（最大 50 MB）。文本型 PDF 直接分类；无可选文字的图片型 PDF 会先 OCR 再分类，并按对应规则做合规核验。同一时间只处理 **1** 个检测报告请求，超出立即返回 **200** 及忙时 Markdown 报告。执行超时：**600 秒**（10 分钟）。
+核验检测报告。上传一份 **PDF**（最大 50 MB）。文本型 PDF 直接分类；无可选文字的图片型 PDF 会先 OCR 再分类，并按对应规则做合规核验。同时执行数：**`TEST_REPORT_CONCURRENCY`**（默认 **1**）。超出立即返回 **200** 及忙时 Markdown 报告。执行超时：**600 秒**（10 分钟）。
 
 ```bash
 curl -X POST "http://localhost:8000/verify/test-report" \
@@ -601,7 +605,7 @@ curl -X POST "http://localhost:8000/verify/test-report" \
 
 #### 并发限制
 
-两个接口都是长任务（大模型 + HTTP + 解析）。每个接口同一时间只允许 **1** 个进行中的请求。同一接口的第二个请求立即返回 **200** 及下列 Markdown `report`，不排队等待。3C 与检测报告槽位互相独立，互不堵塞。
+两个接口都是长任务（大模型 + HTTP + 解析）。每个接口允许的同时执行数可通过环境变量调整（`CCC_CONCURRENCY` / `TEST_REPORT_CONCURRENCY`，默认 **1**）。超出立即返回 **200** 及下列 Markdown `report`，不排队等待。3C 与检测报告槽位互相独立，互不堵塞。
 
 ```json
 {
@@ -613,14 +617,14 @@ curl -X POST "http://localhost:8000/verify/test-report" \
 ```text
 请求进来
   → 读上传文件
-  → 若该接口正在处理：立即返回 200 及忙时报告
+  → 若该接口已达并发上限：立即返回 200 及忙时报告
   → 执行核验（执行超时）
   → 释放槽位
 ```
 
 | 配置 | 3C 默认 | 检测报告默认 |
 | --- | --- | --- |
-| 同时执行数 | 1 | 1 |
+| 同时执行数 | `CCC_CONCURRENCY=1` | `TEST_REPORT_CONCURRENCY=1` |
 | 超出请求 | 立即 200 忙时报告 | 立即 200 忙时报告 |
 | 执行超时 | `CCC_TIMEOUT_SECONDS=60` | `TEST_REPORT_TIMEOUT_SECONDS=600` |
 

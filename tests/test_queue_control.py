@@ -7,7 +7,16 @@ import time
 import pytest
 
 from app.errors import QueueBusyError, VerificationTimeoutError
-from app.queue_control import EndpointLimiter, run_with_queue
+from app.queue_control import EndpointLimiter, _int_env, run_with_queue
+
+
+def test_int_env_reads_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CCC_CONCURRENCY", "3")
+    assert _int_env("CCC_CONCURRENCY", 1) == 3
+    monkeypatch.setenv("CCC_CONCURRENCY", "0")
+    assert _int_env("CCC_CONCURRENCY", 1) == 1
+    monkeypatch.delenv("CCC_CONCURRENCY")
+    assert _int_env("CCC_CONCURRENCY", 1) == 1
 
 
 def test_run_with_queue_rejects_when_busy() -> None:
@@ -84,6 +93,33 @@ def test_run_with_queue_rejects_second_in_flight_immediately() -> None:
             )
         hold.set()
         assert await first == "ok"
+
+    asyncio.run(_case())
+
+
+def test_run_with_queue_allows_up_to_configured_limit() -> None:
+    async def _case() -> None:
+        limiter = EndpointLimiter(limit=2)
+        assert await limiter.try_acquire()
+        assert await limiter.try_acquire()
+        with pytest.raises(QueueBusyError, match="正在处理"):
+            await run_with_queue(
+                lambda: None,
+                limiter=limiter,
+                timeout_seconds=1,
+                busy_message="正在处理",
+                timeout_message="执行超时",
+            )
+        await limiter.release()
+        result = await run_with_queue(
+            lambda: "ok",
+            limiter=limiter,
+            timeout_seconds=1,
+            busy_message="正在处理",
+            timeout_message="执行超时",
+        )
+        assert result == "ok"
+        await limiter.release()
 
     asyncio.run(_case())
 
