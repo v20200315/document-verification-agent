@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+from io import BytesIO
+from pathlib import Path
+
 import pytest
+from reportlab.pdfgen.canvas import Canvas
 
 from app.errors import DocumentTypeError, VerificationSystemError
 from app.services.ccc_verification import process_uploaded_document
 from app.services.test_report_verification import verify_uploaded_test_report
-from sandbox.app.verify_test_report.backend import ProductCategory, TestReportResult
+from sandbox.app.image_pdf_to_text.backend import ConversionResult
+from sandbox.app.verify_test_report.backend import (
+    IMAGE_ONLY_MESSAGE,
+    ComplianceReport,
+    ComplianceStatus,
+    ProductCategory,
+    RuleFinding,
+    TestReportError,
+    TestReportResult,
+)
 from sandbox.src.errors import ExtractionError
 from sandbox.src.schemas import CccCertificateFields, DocumentCategory, DocumentResult
 
@@ -73,3 +86,132 @@ def test_test_report_rejects_other_category() -> None:
             b"%PDF-1.4",
             analyzer_factory=FakeAnalyzer,
         )
+
+
+def _text_pdf_bytes() -> bytes:
+    buffer = BytesIO()
+    canvas = Canvas(buffer)
+    canvas.drawString(72, 720, "OCR extracted report text")
+    canvas.save()
+    return buffer.getvalue()
+
+
+def test_test_report_ocrs_image_pdf_then_validates() -> None:
+    classified = TestReportResult(
+        file_name="ocr-report.pdf",
+        page_count=1,
+        product_category=ProductCategory.HEAT_FAN,
+        category_reasoning="扫描件经 OCR 后可识别为热风机检测报告。",
+        full_content="低环境温度空气源热泵热风机检测报告",
+    )
+    compliance = ComplianceReport(
+        product_category=ProductCategory.HEAT_FAN,
+        overall_status=ComplianceStatus.PASS,
+        summary="全部规则通过。",
+        findings=[
+            RuleFinding(
+                rule_number=1,
+                rule_text="规则一",
+                status=ComplianceStatus.PASS,
+                evidence="报告中有对应描述。",
+            )
+        ],
+    )
+    analyzed_paths: list[str] = []
+
+    class ImageThenTextAnalyzer:
+        def analyze(self, pdf_path: object) -> TestReportResult:
+            path = Path(pdf_path)
+            analyzed_paths.append(path.name)
+            if path.name.startswith("ocr-"):
+                return classified
+            raise TestReportError(IMAGE_ONLY_MESSAGE)
+
+    class FakeConverter:
+        def convert(self, _path: object) -> ConversionResult:
+            pdf_data = _text_pdf_bytes()
+            return ConversionResult(
+                source_file_name="report.pdf",
+                output_file_name="report_text.pdf",
+                page_count=1,
+                full_text="低环境温度空气源热泵热风机检测报告",
+                pdf_data=pdf_data,
+            )
+
+    class FakeValidator:
+        def validate(
+            self,
+            product_category: ProductCategory,
+            full_content: str,
+            rules_markdown: str,
+        ) -> ComplianceReport:
+            assert product_category is ProductCategory.HEAT_FAN
+            assert "热风机" in full_content
+            assert rules_markdown
+            return compliance
+
+    result, report, note = verify_uploaded_test_report(
+        "report.pdf",
+        b"%PDF-1.4 not-empty",
+        analyzer_factory=ImageThenTextAnalyzer,
+        converter_factory=FakeConverter,
+        validator_factory=FakeValidator,
+    )
+
+    assert result == classified
+    assert report == compliance
+    assert note is None
+    assert analyzed_paths[0] == "report.pdf"
+    assert analyzed_paths[1].startswith("ocr-")
+
+
+def test_test_report_skips_ocr_when_pdf_has_text() -> None:
+    classified = TestReportResult(
+        file_name="report.pdf",
+        page_count=1,
+        product_category=ProductCategory.GAS_BOILER,
+        category_reasoning="文本 PDF 可直接分类。",
+        full_content="燃气壁挂炉检测报告",
+    )
+    compliance = ComplianceReport(
+        product_category=ProductCategory.GAS_BOILER,
+        overall_status=ComplianceStatus.PASS,
+        summary="全部规则通过。",
+        findings=[
+            RuleFinding(
+                rule_number=1,
+                rule_text="规则一",
+                status=ComplianceStatus.PASS,
+                evidence="报告中有对应描述。",
+            )
+        ],
+    )
+    converter_calls = 0
+
+    class TextAnalyzer:
+        def analyze(self, _path: object) -> TestReportResult:
+            return classified
+
+    class UnusedConverter:
+        def convert(self, _path: object) -> ConversionResult:
+            nonlocal converter_calls
+            converter_calls += 1
+            raise AssertionError("text PDFs should not run OCR")
+
+    class FakeValidator:
+        def validate(
+            self,
+            _product_category: ProductCategory,
+            _full_content: str,
+            _rules_markdown: str,
+        ) -> ComplianceReport:
+            return compliance
+
+    verify_uploaded_test_report(
+        "report.pdf",
+        b"%PDF-1.4 not-empty",
+        analyzer_factory=TextAnalyzer,
+        converter_factory=UnusedConverter,
+        validator_factory=FakeValidator,
+    )
+    assert converter_calls == 0

@@ -25,6 +25,7 @@ from app.reports.markdown_reports import (
 )
 from app.services.ccc_verification import is_api_configured, process_uploaded_document
 from app.services.test_report_verification import verify_uploaded_test_report
+from sandbox.app.image_pdf_to_text.backend import ImagePDFConversionError
 from sandbox.app.verify_test_report.backend import TestReportError
 from sandbox.src.errors import DocumentLoadError
 
@@ -123,12 +124,14 @@ async def verify_test_report(
             queue_wait_seconds=TEST_REPORT_QUEUE_WAIT_SECONDS,
             timeout_seconds=TEST_REPORT_TIMEOUT_SECONDS,
             queue_timeout_message="检测报告核验排队超时，请稍后重试。",
-            timeout_message="检测报告核验超时（超过 3 分钟）。",
+            timeout_message="检测报告核验超时（超过 10 分钟）。",
         )
     except DocumentLoadError as exc:
         return _error_response(400, "invalid_upload", str(exc))
     except TestReportError as exc:
         return _error_response(400, "invalid_upload", str(exc))
+    except ImagePDFConversionError as exc:
+        return _error_response(500, "system_error", f"图片型 PDF OCR 失败：{exc}")
     except DocumentTypeError as exc:
         return _error_response(422, "not_test_report", str(exc))
     except QueueTimeoutError as exc:

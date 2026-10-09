@@ -129,7 +129,7 @@ DASHSCOPE_API_KEY=sk-...
 # CCC_TIMEOUT_SECONDS=60
 # TEST_REPORT_CONCURRENCY=2
 # TEST_REPORT_QUEUE_WAIT_SECONDS=40
-# TEST_REPORT_TIMEOUT_SECONDS=180
+# TEST_REPORT_TIMEOUT_SECONDS=600
 ```
 
 ### Run
@@ -155,7 +155,7 @@ curl -X POST "http://localhost:8000/verify/ccc" \
 
 #### `POST /verify/test-report`
 
-Verify a Chinese product test report. Upload one **PDF** (max 50 MB). The service classifies the product category and runs the category rules. Queue wait: **40 seconds**. Execution timeout: **180 seconds**. Concurrent jobs: **2**.
+Verify a Chinese product test report. Upload one **PDF** (max 50 MB). Text PDFs are classified directly. Image-only PDFs (no selectable text) are OCR'd first, then classified and checked against the category rules. Queue wait: **40 seconds**. Execution timeout: **600 seconds** (10 minutes). Concurrent jobs: **2**.
 
 ```bash
 curl -X POST "http://localhost:8000/verify/test-report" \
@@ -172,7 +172,7 @@ curl -X POST "http://localhost:8000/verify/test-report" \
 | 429 | `queue_timeout` | Waited too long for a concurrency slot |
 | 500 | `system_error` | Pipeline or unexpected system failure |
 | 503 | `missing_api_key` | `DASHSCOPE_API_KEY` is not configured |
-| 504 | `timeout` | Execution exceeded 1 minute (CCC) or 3 minutes (test report) |
+| 504 | `timeout` | Execution exceeded 1 minute (CCC) or 10 minutes (test report) |
 
 Success body:
 
@@ -209,7 +209,7 @@ Request
 | --- | --- | --- |
 | Concurrent executions | `CCC_CONCURRENCY=3` | `TEST_REPORT_CONCURRENCY=2` |
 | Queue wait timeout | `CCC_QUEUE_WAIT_SECONDS=20` | `TEST_REPORT_QUEUE_WAIT_SECONDS=40` |
-| Execution timeout | `CCC_TIMEOUT_SECONDS=60` | `TEST_REPORT_TIMEOUT_SECONDS=180` |
+| Execution timeout | `CCC_TIMEOUT_SECONDS=60` | `TEST_REPORT_TIMEOUT_SECONDS=600` |
 
 Client time ≈ queue wait + execution. Queue timeout returns **429**; execution timeout returns **504**. A timed-out job may still run in a background thread, so the semaphore is what actually caps load.
 
@@ -538,7 +538,7 @@ DASHSCOPE_API_KEY=sk-...
 # CCC_TIMEOUT_SECONDS=60
 # TEST_REPORT_CONCURRENCY=2
 # TEST_REPORT_QUEUE_WAIT_SECONDS=40
-# TEST_REPORT_TIMEOUT_SECONDS=180
+# TEST_REPORT_TIMEOUT_SECONDS=600
 ```
 
 ### 运行
@@ -564,7 +564,7 @@ curl -X POST "http://localhost:8000/verify/ccc" \
 
 #### `POST /verify/test-report`
 
-核验检测报告。上传一份 **PDF**（最大 50 MB）。服务会识别产品类别并按对应规则做合规核验。排队等待：**40 秒**。执行超时：**180 秒**。同时执行：**2** 份。
+核验检测报告。上传一份 **PDF**（最大 50 MB）。文本型 PDF 直接分类；无可选文字的图片型 PDF 会先 OCR 再分类，并按对应规则做合规核验。排队等待：**40 秒**。执行超时：**600 秒**（10 分钟）。同时执行：**2** 份。
 
 ```bash
 curl -X POST "http://localhost:8000/verify/test-report" \
@@ -581,7 +581,7 @@ curl -X POST "http://localhost:8000/verify/test-report" \
 | 429 | `queue_timeout` | 等待并发槽位超时 |
 | 500 | `system_error` | 解析失败或其他系统错误 |
 | 503 | `missing_api_key` | 未配置 `DASHSCOPE_API_KEY` |
-| 504 | `timeout` | 执行超时：3C 超过 1 分钟，或检测报告超过 3 分钟 |
+| 504 | `timeout` | 执行超时：3C 超过 1 分钟，或检测报告超过 10 分钟 |
 
 成功体：
 
@@ -618,7 +618,7 @@ curl -X POST "http://localhost:8000/verify/test-report" \
 | --- | --- | --- |
 | 同时执行数 | `CCC_CONCURRENCY=3` | `TEST_REPORT_CONCURRENCY=2` |
 | 排队等待超时 | `CCC_QUEUE_WAIT_SECONDS=20` | `TEST_REPORT_QUEUE_WAIT_SECONDS=40` |
-| 执行超时 | `CCC_TIMEOUT_SECONDS=60` | `TEST_REPORT_TIMEOUT_SECONDS=180` |
+| 执行超时 | `CCC_TIMEOUT_SECONDS=60` | `TEST_REPORT_TIMEOUT_SECONDS=600` |
 
 客户端总耗时 ≈ 排队时间 + 执行时间。排队超时返回 **429**；执行超时返回 **504**。执行超时后线程里的任务可能仍在跑，真正控负载的是信号量。
 
