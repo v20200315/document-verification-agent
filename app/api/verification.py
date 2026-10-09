@@ -5,19 +5,17 @@ from fastapi.responses import JSONResponse
 
 from app.errors import (
     DocumentTypeError,
-    QueueTimeoutError,
+    QueueBusyError,
     VerificationSystemError,
     VerificationTimeoutError,
 )
 from app.models.responses import MarkdownReportResponse
 from app.queue_control import (
-    CCC_QUEUE_WAIT_SECONDS,
     CCC_TIMEOUT_SECONDS,
-    TEST_REPORT_QUEUE_WAIT_SECONDS,
     TEST_REPORT_TIMEOUT_SECONDS,
-    ccc_slots,
+    ccc_limiter,
     run_with_queue,
-    test_report_slots,
+    test_report_limiter,
 )
 from app.reports.markdown_reports import (
     build_ccc_final_markdown,
@@ -31,10 +29,11 @@ from sandbox.src.errors import DocumentLoadError
 
 router = APIRouter(prefix="/verify", tags=["verification"])
 
+BUSY_REPORT = "# AI请求数量已达最大值，请稍后再试。"
+
 ERROR_RESPONSES = {
     400: {"description": "Invalid upload"},
     422: {"description": "Not the expected document type"},
-    429: {"description": "Verification queue is busy"},
     500: {"description": "System error"},
     503: {"description": "API key is not configured"},
     504: {"description": "Verification timed out"},
@@ -77,18 +76,17 @@ async def verify_ccc(
             process_uploaded_document,
             file_name,
             data,
-            slots=ccc_slots(),
-            queue_wait_seconds=CCC_QUEUE_WAIT_SECONDS,
+            limiter=ccc_limiter(),
             timeout_seconds=CCC_TIMEOUT_SECONDS,
-            queue_timeout_message="CCC 核验排队超时，请稍后重试。",
+            busy_message=BUSY_REPORT,
             timeout_message="CCC 核验超时（超过 1 分钟）。",
         )
     except DocumentLoadError as exc:
         return _error_response(400, "invalid_upload", str(exc))
     except DocumentTypeError as exc:
         return _error_response(422, "not_ccc_document", str(exc))
-    except QueueTimeoutError as exc:
-        return _error_response(429, "queue_timeout", str(exc))
+    except QueueBusyError:
+        return MarkdownReportResponse(status_code=200, report=BUSY_REPORT)
     except VerificationTimeoutError as exc:
         return _error_response(504, "timeout", str(exc))
     except VerificationSystemError as exc:
@@ -120,10 +118,9 @@ async def verify_test_report(
             verify_uploaded_test_report,
             file_name,
             data,
-            slots=test_report_slots(),
-            queue_wait_seconds=TEST_REPORT_QUEUE_WAIT_SECONDS,
+            limiter=test_report_limiter(),
             timeout_seconds=TEST_REPORT_TIMEOUT_SECONDS,
-            queue_timeout_message="检测报告核验排队超时，请稍后重试。",
+            busy_message=BUSY_REPORT,
             timeout_message="检测报告核验超时（超过 10 分钟）。",
         )
     except DocumentLoadError as exc:
@@ -134,8 +131,8 @@ async def verify_test_report(
         return _error_response(500, "system_error", f"图片型 PDF OCR 失败：{exc}")
     except DocumentTypeError as exc:
         return _error_response(422, "not_test_report", str(exc))
-    except QueueTimeoutError as exc:
-        return _error_response(429, "queue_timeout", str(exc))
+    except QueueBusyError:
+        return MarkdownReportResponse(status_code=200, report=BUSY_REPORT)
     except VerificationTimeoutError as exc:
         return _error_response(504, "timeout", str(exc))
     except VerificationSystemError as exc:

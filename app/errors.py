@@ -9,8 +9,8 @@ class VerificationTimeoutError(TimeoutError):
     """Raised when verification exceeds the allowed time."""
 
 
-class QueueTimeoutError(TimeoutError):
-    """Raised when a request waits too long for a concurrency slot."""
+class QueueBusyError(RuntimeError):
+    """Raised when the endpoint is already processing another request."""
 
 
 class VerificationSystemError(RuntimeError):

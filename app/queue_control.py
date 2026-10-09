@@ -5,14 +5,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from app.errors import QueueTimeoutError, VerificationTimeoutError
-
-
-def _int_env(name: str, default: int) -> int:
-    raw = os.getenv(name, "").strip()
-    if not raw:
-        return default
-    return max(1, int(raw))
+from app.errors import QueueBusyError, VerificationTimeoutError
 
 
 def _float_env(name: str, default: float) -> float:
@@ -22,52 +15,64 @@ def _float_env(name: str, default: float) -> float:
     return max(0.0, float(raw))
 
 
-CCC_CONCURRENCY = _int_env("CCC_CONCURRENCY", 3)
-CCC_QUEUE_WAIT_SECONDS = _float_env("CCC_QUEUE_WAIT_SECONDS", 20)
 CCC_TIMEOUT_SECONDS = _float_env("CCC_TIMEOUT_SECONDS", 60)
-
-TEST_REPORT_CONCURRENCY = _int_env("TEST_REPORT_CONCURRENCY", 2)
-TEST_REPORT_QUEUE_WAIT_SECONDS = _float_env("TEST_REPORT_QUEUE_WAIT_SECONDS", 40)
 TEST_REPORT_TIMEOUT_SECONDS = _float_env("TEST_REPORT_TIMEOUT_SECONDS", 600)
 
-_ccc_slots: asyncio.Semaphore | None = None
-_test_report_slots: asyncio.Semaphore | None = None
+
+class EndpointLimiter:
+    """Allow one in-flight job; extra requests are rejected immediately."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._busy = False
+
+    async def try_acquire(self) -> bool:
+        async with self._lock:
+            if self._busy:
+                return False
+            self._busy = True
+            return True
+
+    async def release(self) -> None:
+        async with self._lock:
+            self._busy = False
 
 
-def ccc_slots() -> asyncio.Semaphore:
-    global _ccc_slots
-    if _ccc_slots is None:
-        _ccc_slots = asyncio.Semaphore(CCC_CONCURRENCY)
-    return _ccc_slots
+_ccc_limiter: EndpointLimiter | None = None
+_test_report_limiter: EndpointLimiter | None = None
 
 
-def test_report_slots() -> asyncio.Semaphore:
-    global _test_report_slots
-    if _test_report_slots is None:
-        _test_report_slots = asyncio.Semaphore(TEST_REPORT_CONCURRENCY)
-    return _test_report_slots
+def ccc_limiter() -> EndpointLimiter:
+    global _ccc_limiter
+    if _ccc_limiter is None:
+        _ccc_limiter = EndpointLimiter()
+    return _ccc_limiter
+
+
+def test_report_limiter() -> EndpointLimiter:
+    global _test_report_limiter
+    if _test_report_limiter is None:
+        _test_report_limiter = EndpointLimiter()
+    return _test_report_limiter
 
 
 def reset_slots_for_tests() -> None:
-    global _ccc_slots, _test_report_slots
-    _ccc_slots = None
-    _test_report_slots = None
+    global _ccc_limiter, _test_report_limiter
+    _ccc_limiter = None
+    _test_report_limiter = None
 
 
 async def run_with_queue[T](
     func: Callable[..., T],
     *args: Any,
-    slots: asyncio.Semaphore,
-    queue_wait_seconds: float,
+    limiter: EndpointLimiter,
     timeout_seconds: float,
-    queue_timeout_message: str,
+    busy_message: str,
     timeout_message: str,
 ) -> T:
-    """Wait for a concurrency slot, then run the blocking job with an execution timeout."""
-    try:
-        await asyncio.wait_for(slots.acquire(), timeout=queue_wait_seconds)
-    except TimeoutError as exc:
-        raise QueueTimeoutError(queue_timeout_message) from exc
+    """Reject immediately if busy, otherwise run the blocking job with an execution timeout."""
+    if not await limiter.try_acquire():
+        raise QueueBusyError(busy_message)
 
     try:
         return await asyncio.wait_for(
@@ -77,4 +82,4 @@ async def run_with_queue[T](
     except TimeoutError as exc:
         raise VerificationTimeoutError(timeout_message) from exc
     finally:
-        slots.release()
+        await limiter.release()
